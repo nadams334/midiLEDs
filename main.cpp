@@ -9,7 +9,8 @@
 #include "RtMidi.h"
 
 const char* mappingFilename = "config/pianoLEDmapping.cfg";
-const unsigned char noteOnOffCode = (unsigned char)0x90;
+const unsigned char noteOnCode = (unsigned char)0x90;
+const unsigned char noteOffCode = (unsigned char)0x80;
 
 char* LEDdata; // byte buffer to be sent to WPA102 LED strip
 int* keyboard; // mapping from note number to LED number
@@ -48,8 +49,10 @@ void set_LED(int note, int velocity)
 
 void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
 {
-	if (message->at(0) == noteOnOffCode)
+	if (message->at(0) == noteOnCode)
 		set_LED(message->at(1), message->at(2));
+	else if (message->at(0) == noteOffCode)
+		set_LED(message->at(1), 0);
 }
 
 void clear_LEDs()
