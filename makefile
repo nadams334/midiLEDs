@@ -1,2 +1,2 @@
 all:
-	g++ -Wall -D__LINUX_ALSA__ main.cpp -l rtmidi -l asound -l pthread -o midiLEDs
+	g++ -Wall -D__LINUX_ALSA__ main.cpp -o midiLEDs -l bcm2835 -l rtmidi -l asound -l pthread 
