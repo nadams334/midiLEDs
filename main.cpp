@@ -29,22 +29,27 @@ RtMidiIn* midiin;
 void update()
 {
 	bcm2835_spi_writenb(LEDdata, numBytes);
+	/*for (int i = 0; i < numBytes; i+=4)
+	{
+		std::cout << i << ": " << (int)LEDdata[i] << std::endl << i+1 << ": " << (int)LEDdata[i+1] << std::endl << i+2 << ": " << (int)LEDdata[i+2] << std::endl << i+3 << ": " << (int)LEDdata[i+3] << std::endl;
+		std::cout << std::endl;
+	}*/
 }
 
 void set_LED(int note, int velocity)
 {
 	int num = keyboard[note - notesPerOctave*lowestOctave];
-	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + velocity/4 - 1;
+	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + velocity/4;
 	LEDdata[startFrameSize+bytesPerLED*(num)+1] = 100 * (velocity > 0);
 	LEDdata[startFrameSize+bytesPerLED*(num)+2] = 100 * (velocity > 0);
 	LEDdata[startFrameSize+bytesPerLED*(num)+3] = 100 * (velocity > 0);
+	update();
 }
 
 void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
 {
 	if (message->at(0) == noteOnOffCode)
 		set_LED(message->at(1), message->at(2));
-	update();
 }
 
 void clear_LEDs()
@@ -56,12 +61,12 @@ void clear_LEDs()
 		LEDdata[i+2] = 0;
 		LEDdata[i+3] = 0;
 	}
+	update();
 }
 
 int end(int status)
 {
 	clear_LEDs();
-	update();
 	bcm2835_spi_end();
 	bcm2835_close();
 	delete midiin;
@@ -118,10 +123,19 @@ void init()
 		LEDdata[i] = 0x00;
 	}
 	
-	// Generate end frame
-	for (int i = 0; i < endFrameSize; i++)
+	// Generate blank data
+	for (int i = startFrameSize; i < startFrameSize + numBytes; i+=4)
 	{
-		LEDdata[i+startFrameSize+numBytes] = 0x00;
+		LEDdata[i] = 0xE0 + 0;
+		LEDdata[i+1] = 0x00;
+		LEDdata[i+2] = 0x00;
+		LEDdata[i+3] = 0x00;
+	}
+	
+	// Generate end frame
+	for (int i = startFrameSize + numBytes; i < startFrameSize + numBytes + endFrameSize; i++)
+	{
+		LEDdata[i] = 0x00;
 	}
 
 	numBytes += startFrameSize;
