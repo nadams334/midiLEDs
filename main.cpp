@@ -34,8 +34,7 @@ void update()
 void set_LED(int note, int velocity)
 {
 	int num = keyboard[note - notesPerOctave*lowestOctave];
-	//std::cout << num << std::endl;
-	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + velocity/4;
+	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + velocity/4 - 1;
 	LEDdata[startFrameSize+bytesPerLED*(num)+1] = 100 * (velocity > 0);
 	LEDdata[startFrameSize+bytesPerLED*(num)+2] = 100 * (velocity > 0);
 	LEDdata[startFrameSize+bytesPerLED*(num)+3] = 100 * (velocity > 0);
@@ -43,7 +42,6 @@ void set_LED(int note, int velocity)
 
 void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
 {
-	//std::cout << (int)(message->at(0)) << std::endl;
 	if (message->at(0) == noteOnOffCode)
 		set_LED(message->at(1), message->at(2));
 	update();
@@ -87,18 +85,18 @@ void init()
 	// Initialize mapping from config file
 	
 	keyboard = new int[numKeys];
-	std::fstream mappingFile;
+	std::ifstream mappingFile;
 	mappingFile.open(mappingFilename);
-	float key;
-	float LED;
+	int key = 0;
+	int LED = 0;
 	
 	if (mappingFile.is_open())
 	{
-		while ( mappingFile >> key )
+		while ( !mappingFile.eof() )
 		{
+			mappingFile >> key;
 			mappingFile >> LED;
-			std::cout << "key: " << key << ", LED: " << LED << std::endl;
-			keyboard[(int)key] = (int)LED;
+			keyboard[key] = LED;
 		}
 		mappingFile.close();
 	}
@@ -107,11 +105,6 @@ void init()
 	{
 		std::cerr << "Could not open MIDI-LED mapping configuration file: " << mappingFilename << "\n Exiting...";
 		end(1);
-	}
-	
-	for (int i = 0; i < numKeys; i++)
-	{
-		std::cout << "keyboard[" << i << "]: " << keyboard[i] << std::endl;
 	}
 	
 	
