@@ -8,21 +8,31 @@
 #include "bcm2835.h"
 #include "RtMidi.h"
 
-const char* mappingFilename = "config/pianoLEDmapping.cfg";
-const unsigned char noteOnCode = (unsigned char)0x90;
-const unsigned char noteOffCode = (unsigned char)0x80;
+const char* noteMappingFilename = "config/noteMapping.cfg";
+const char* colorMappingFilename = "config/colorMapping.cfg";
+const unsigned char noteOnCodeMin = (unsigned char)0x90;
+const unsigned char noteOnCodeMax = (unsigned char)0x9F;
+const unsigned char noteOffCodeMin = (unsigned char)0x80;
+const unsigned char noteOffCodeMax = (unsigned char)0x8F;
 
-char* LEDdata; // byte buffer to be sent to WPA102 LED strip
 int* keyboard; // mapping from note number to LED number
-const int lowestOctave = 3;
 const int numFullOctaves = 5;
 const int notesPerOctave = 12;
 const int numKeys = numFullOctaves * notesPerOctave + 1;
+
+char* LEDdata; // byte buffer to be sent to WPA102 LED strip
 const int numLEDs = 288;
 const int bytesPerLED = 4;
 const int startFrameSize = 4;
 const int endFrameSize = (numLEDs/2)/8 + 1;
 uint32_t numBytes = numLEDs * bytesPerLED;
+
+// Color settings for each midi channel, loaded from config file
+const int numChannels = 16;
+const int numNotes = 128;
+unsigned char* red;
+unsigned char* green;
+unsigned char* blue;
 
 RtMidiIn* midiin;
 
@@ -30,29 +40,34 @@ RtMidiIn* midiin;
 void update()
 {
 	bcm2835_spi_writenb(LEDdata, numBytes);
-	/*for (int i = 0; i < numBytes; i+=4)
-	{
-		std::cout << i << ": " << (int)LEDdata[i] << std::endl << i+1 << ": " << (int)LEDdata[i+1] << std::endl << i+2 << ": " << (int)LEDdata[i+2] << std::endl << i+3 << ": " << (int)LEDdata[i+3] << std::endl;
-		std::cout << std::endl;
-	}*/
 }
 
-void set_LED(int note, int velocity)
+void set_LED(int channel, int note, int velocity)
 {
-	int num = keyboard[note - notesPerOctave*lowestOctave];
+	int num = keyboard[note];
+
+	if (num < 0) return; // note not on piano
+	
 	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + velocity/4;
-	LEDdata[startFrameSize+bytesPerLED*(num)+1] = 100 * (velocity > 0);
-	LEDdata[startFrameSize+bytesPerLED*(num)+2] = 100 * (velocity > 0);
-	LEDdata[startFrameSize+bytesPerLED*(num)+3] = 100 * (velocity > 0);
+	LEDdata[startFrameSize+bytesPerLED*(num)+1] = blue[channel];
+	LEDdata[startFrameSize+bytesPerLED*(num)+2] = green[channel];
+	LEDdata[startFrameSize+bytesPerLED*(num)+3] = red[channel];
+	
 	update();
 }
 
 void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
 {
-	if (message->at(0) == noteOnCode)
-		set_LED(message->at(1), message->at(2));
-	else if (message->at(0) == noteOffCode)
-		set_LED(message->at(1), 0);
+	int code = (int) message->at(0);
+
+	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
+	{
+		set_LED(code - noteOnCodeMin, message->at(1), message->at(2));
+	}	
+	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
+	{
+		set_LED(code - noteOffCodeMin, message->at(1), 0);
+	}
 }
 
 void clear_LEDs()
@@ -82,7 +97,8 @@ void signal_handler(int signal)
     end(0);
 }
 
-void init()
+// Specify the port to open. -1 means create a virtual port
+void init(int port)
 {
 	
 	// Signal handler
@@ -90,29 +106,98 @@ void init()
 	signal(SIGINT, signal_handler);
 	
 	
-	// Initialize mapping from config file
+	// Load config files
 	
-	keyboard = new int[numKeys];
-	std::ifstream mappingFile;
-	mappingFile.open(mappingFilename);
+	// MIDI note - LED position mapping
+	
+	keyboard = new int[numNotes];
+	std::ifstream noteMappingFile;
+	noteMappingFile.open(noteMappingFilename);
 	int key = 0;
 	int LED = 0;
 	
-	if (mappingFile.is_open())
+	for (int i = 0; i < numNotes; i++)
 	{
-		while ( !mappingFile.eof() )
+		keyboard[i] = -1;
+	}
+	
+	if (noteMappingFile.is_open())
+	{
+		while ( !noteMappingFile.eof() )
 		{
-			mappingFile >> key;
-			mappingFile >> LED;
+			noteMappingFile >> key;
+			noteMappingFile >> LED;
 			keyboard[key] = LED;
 		}
-		mappingFile.close();
+		noteMappingFile.close();
 	}
 	
 	else
 	{
-		std::cerr << "Could not open MIDI-LED mapping configuration file: " << mappingFilename << "\n Exiting...";
+		std::cerr << "Could not open MIDI-LED note mapping configuration file: " << noteMappingFilename << "\nExiting..." << std::endl;
 		end(1);
+	}
+	
+	
+	// MIDI channel - LED color mapping
+	
+	red = new unsigned char[numChannels];
+	green = new unsigned char[numChannels];
+	blue = new unsigned char[numChannels];
+	
+	std::ifstream colorMappingFile;
+	colorMappingFile.open(colorMappingFilename);
+	
+	int chnl = 0;
+	int r = 0;
+	int g = 0;
+	int b = 0;
+	
+	for (int i = 0; i < numChannels; i++)
+	{
+		red[i] = 255;
+		green[i] = 255;
+		blue[i] = 255;
+	}
+	
+	if (colorMappingFile.is_open())
+	{
+		while ( !colorMappingFile.eof() )
+		{
+			colorMappingFile >> chnl;
+			colorMappingFile >> r;
+			colorMappingFile >> g;
+			colorMappingFile >> b;
+			if (chnl < 1 || chnl > 16)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			if (r < 0 || r > 255)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Red must be between 0 and 255 (was " << r << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			if (g < 0 || g > 255)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Green must be between 0 and 255 (was " << g << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			if (b < 0 || b > 255)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between 0 and 255 (was " << b << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			red[chnl-1] = r;
+			green[chnl-1] = g;
+			blue[chnl-1] = b;
+		}
+		colorMappingFile.close();
+	}
+	
+	else
+	{
+		std::cerr << "Could not open MIDI-LED color mapping configuration file: " << colorMappingFilename << "\nUsing all white." << std::endl;
 	}
 	
 	
@@ -121,13 +206,13 @@ void init()
 	LEDdata = new char[startFrameSize + numBytes + endFrameSize];
 
 	// Generate start frame
-	for (int i = 0; i < startFrameSize; i++)
+	for (unsigned int i = 0; i < startFrameSize; i++)
 	{
 		LEDdata[i] = 0x00;
 	}
 	
 	// Generate blank data
-	for (int i = startFrameSize; i < startFrameSize + numBytes; i+=4)
+	for (unsigned int i = startFrameSize; i < startFrameSize + numBytes; i+=4)
 	{
 		LEDdata[i] = 0xE0 + 0;
 		LEDdata[i+1] = 0x00;
@@ -136,7 +221,7 @@ void init()
 	}
 	
 	// Generate end frame
-	for (int i = startFrameSize + numBytes; i < startFrameSize + numBytes + endFrameSize; i++)
+	for (unsigned int i = startFrameSize + numBytes; i < startFrameSize + numBytes + endFrameSize; i++)
 	{
 		LEDdata[i] = 0x00;
 	}
@@ -166,7 +251,15 @@ void init()
 	
 	midiin = new RtMidiIn();
 	// Create a port that other audio software can output MIDI data to
-	midiin->openVirtualPort();
+	if (port == -1)
+	{
+		midiin->openVirtualPort();
+	}
+	// Open specified port
+	else 
+	{
+		midiin->openPort(port);
+	}
 	// Set our callback function.  This should be done immediately after
 	// opening the port to avoid having incoming messages written to the
 	// queue.
@@ -182,9 +275,12 @@ void loop()
 	std::cin.get(input);
 }
 
-int main()
+int main(int argc, char** argv)
 {
-	init();
+	int port = -1;
+	if (argc > 1)
+		port = (int)(argv[2]);
+	init(port);
 	
 	loop();
 
