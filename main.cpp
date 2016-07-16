@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <csignal>
 #include <cmath>
+#include <string.h>
 
 #include "bcm2835.h"
 #include "RtMidi.h"
@@ -112,8 +113,7 @@ void signal_handler(int signal)
     end(0);
 }
 
-// Specify the port to open. -1 means create a virtual port
-void init(int port)
+void init()
 {
 	
 	// Signal handler
@@ -267,20 +267,15 @@ void init(int port)
 	// Initalize RtMidi port for MIDI communcation
 	
 	midiin = new RtMidiIn();
+	
 	// Create a port that other audio software can output MIDI data to
-	if (port == -1)
-	{
-		midiin->openVirtualPort();
-	}
-	// Open specified port
-	else 
-	{
-		midiin->openPort(port);
-	}
+	midiin->openVirtualPort();
+	
 	// Set our callback function.  This should be done immediately after
 	// opening the port to avoid having incoming messages written to the
 	// queue.
 	midiin->setCallback( &onMidiMessageReceived );
+	
 	// ignore sysex, timing, or active sensing messages.
 	midiin->ignoreTypes( true, true, true );
 	
@@ -294,10 +289,7 @@ void loop()
 
 int main(int argc, char** argv)
 {
-	int port = -1;
-	if (argc > 1)
-		port = (int)(argv[2]);
-	init(port);
+	init();
 	
 	loop();
 
