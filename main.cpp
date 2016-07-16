@@ -4,6 +4,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <csignal>
+#include <cmath>
 
 #include "bcm2835.h"
 #include "RtMidi.h"
@@ -28,11 +29,12 @@ const int endFrameSize = (numLEDs/2)/8 + 1;
 uint32_t numBytes = numLEDs * bytesPerLED;
 
 // Color settings for each midi channel, loaded from config file
+const int dimnessFactor = 8; // divide MIDI velocity by this amount when calculating brightness
 const int numChannels = 16;
 const int numNotes = 128;
-unsigned char* red;
-unsigned char* green;
-unsigned char* blue;
+int* red;
+int* green;
+int* blue;
 
 RtMidiIn* midiin;
 
@@ -46,12 +48,25 @@ void set_LED(int channel, int note, int velocity)
 {
 	int num = keyboard[note];
 
-	if (num < 0) return; // note not on piano
+	if (num < 0 ) return; // note not on piano
 	
-	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + velocity/4;
-	LEDdata[startFrameSize+bytesPerLED*(num)+1] = blue[channel];
-	LEDdata[startFrameSize+bytesPerLED*(num)+2] = green[channel];
-	LEDdata[startFrameSize+bytesPerLED*(num)+3] = red[channel];
+	int r = red[channel];
+	int g = green[channel];
+	int b = blue[channel];
+	
+	if (r < 0)
+		r = ( rand() % std::abs(r) ) + 1; // random number between 1 and inputted value
+		
+	if (g < 0)
+		g = ( rand() % std::abs(g) ) + 1; // random number between 1 and inputted value
+		
+	if (b < 0)
+		b = ( rand() % std::abs(b) ) + 1; // random number between 1 and inputted value
+	
+	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + (velocity / dimnessFactor + (velocity % dimnessFactor != 0)); // ceiling(velocity/dimnessFactor)
+	LEDdata[startFrameSize+bytesPerLED*(num)+1] = b;
+	LEDdata[startFrameSize+bytesPerLED*(num)+2] = g;
+	LEDdata[startFrameSize+bytesPerLED*(num)+3] = r;
 	
 	update();
 }
@@ -105,6 +120,8 @@ void init(int port)
 	
 	signal(SIGINT, signal_handler);
 	
+	srand(time(NULL));
+	
 	
 	// Load config files
 	
@@ -141,9 +158,9 @@ void init(int port)
 	
 	// MIDI channel - LED color mapping
 	
-	red = new unsigned char[numChannels];
-	green = new unsigned char[numChannels];
-	blue = new unsigned char[numChannels];
+	red = new int[numChannels];
+	green = new int[numChannels];
+	blue = new int[numChannels];
 	
 	std::ifstream colorMappingFile;
 	colorMappingFile.open(colorMappingFilename);
@@ -173,19 +190,19 @@ void init(int port)
 				std::cerr << "Error in (" << colorMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
 				end(1);
 			}	
-			if (r < 0 || r > 255)
+			if (r < -255 || r > 255)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Red must be between 0 and 255 (was " << r << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << colorMappingFilename << "): Red must be between -255 and 255 (was " << r << ").\nExiting..." << std::endl;
 				end(1);
 			}	
-			if (g < 0 || g > 255)
+			if (g < -255 || g > 255)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Green must be between 0 and 255 (was " << g << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << colorMappingFilename << "): Green must be between -255 and 255 (was " << g << ").\nExiting..." << std::endl;
 				end(1);
 			}	
-			if (b < 0 || b > 255)
+			if (b < -255 || b > 255)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between 0 and 255 (was " << b << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between -255 and 255 (was " << b << ").\nExiting..." << std::endl;
 				end(1);
 			}	
 			red[chnl-1] = r;
