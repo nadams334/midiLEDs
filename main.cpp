@@ -1,4 +1,4 @@
-// cmidiin.cpp
+// main.cpp
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -10,18 +10,21 @@
 #include "bcm2835.h"
 #include "RtMidi.h"
 
+
 const char* noteMappingFilename = "config/noteMapping.cfg";
 const char* colorMappingFilename = "config/colorMapping.cfg";
+
+
 const unsigned char noteOnCodeMin = (unsigned char)0x90;
 const unsigned char noteOnCodeMax = (unsigned char)0x9F;
 const unsigned char noteOffCodeMin = (unsigned char)0x80;
 const unsigned char noteOffCodeMax = (unsigned char)0x8F;
 
-int* keyboard; // mapping from note number to LED number
-const int numFullOctaves = 5;
-const int notesPerOctave = 12;
-const int numKeys = numFullOctaves * notesPerOctave + 1;
+const unsigned char ccStatusCodeMin = (unsigned char)0xB0;
+const unsigned char ccStatusCodeMax = (unsigned char)0xBF;
 
+
+int* keyboard; // mapping from note number to LED number
 char* LEDdata; // byte buffer to be sent to WPA102 LED strip
 const int numLEDs = 288;
 const int bytesPerLED = 4;
@@ -29,13 +32,20 @@ const int startFrameSize = 4;
 const int endFrameSize = (numLEDs/2)/8 + 1;
 uint32_t numBytes = numLEDs * bytesPerLED;
 
-// Color settings for each midi channel, loaded from config file
+
 const int dimnessFactor = 8; // divide MIDI velocity by this amount when calculating brightness
 const int numChannels = 16;
 const int numNotes = 128;
+
+bool dynamic_colors = true;
+int cc_red = 256;
+int cc_green = 256;
+int cc_blue = 256;
+
 int* red;
 int* green;
 int* blue;
+
 
 RtMidiIn* midiin;
 
@@ -83,6 +93,25 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
 	{
 		set_LED(code - noteOffCodeMin, message->at(1), 0);
+	}
+	else if (code >= ccStatusCodeMin && code <= ccStatusCodeMax)
+	{
+		int ccCode = (int) message->at(1);
+		int value = (int) message->at(2);
+		int channel = code - (int) ccStatusCodeMin;
+
+		if (dynamic_colors)
+		{
+			if (ccCode == cc_red)
+				red[channel] = value;
+
+			else if (ccCode == cc_green)
+				green[channel] = value;
+
+			else if (ccCode == cc_blue)
+				blue[channel] = value;
+
+		}
 	}
 }
 
@@ -157,7 +186,7 @@ void init()
 	
 	
 	// MIDI channel - LED color mapping
-	
+
 	red = new int[numChannels];
 	green = new int[numChannels];
 	blue = new int[numChannels];
@@ -179,8 +208,16 @@ void init()
 	
 	if (colorMappingFile.is_open())
 	{
+		// Dynamic color messages
+		
+		colorMappingFile >> cc_red;
+		colorMappingFile >> cc_green;
+		colorMappingFile >> cc_blue;
+
 		while ( !colorMappingFile.eof() )
 		{
+			// Static channel colors
+
 			colorMappingFile >> chnl;
 			colorMappingFile >> r;
 			colorMappingFile >> g;
@@ -289,6 +326,16 @@ void loop()
 
 int main(int argc, char** argv)
 {
+	// Parse args
+	for (int i = 0; i < argc; i++)
+	{
+		// Ignore MIDI color change messages, keep each channel at its configured color
+		if ( strcmp(argv[i], "-c") == 0 )
+		{
+			dynamic_colors = false;
+		}
+	}
+
 	init();
 	
 	loop();
