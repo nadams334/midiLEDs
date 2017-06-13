@@ -37,7 +37,7 @@ const int dimnessFactor = 8; // divide MIDI velocity by this amount when calcula
 const int numChannels = 16;
 const int numNotes = 128;
 
-bool dynamic_colors = true;
+bool dynamic_colors = false;
 int cc_red = 256;
 int cc_green = 256;
 int cc_blue = 256;
@@ -329,10 +329,10 @@ int main(int argc, char** argv)
 	// Parse args
 	for (int i = 0; i < argc; i++)
 	{
-		// Ignore MIDI color change messages, keep each channel at its configured color
+		// Allow MIDI color change messages
 		if ( strcmp(argv[i], "-c") == 0 )
 		{
-			dynamic_colors = false;
+			dynamic_colors = true;
 		}
 	}
 
