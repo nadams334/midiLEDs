@@ -1,2 +1,2 @@
 # midiLEDs
-MIDI Interpreter for WPA102 LED Strip
+MIDI Interpreter for APA102 LED Strip
