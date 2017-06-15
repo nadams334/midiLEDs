@@ -1,6 +1,6 @@
 #include <iostream>
 #include <fstream>
-#include <deque>
+#include <set>
 
 using namespace std;
 
@@ -21,21 +21,21 @@ int main()
 	ofstream outFile;
 	outFile.open("all_keyboard_notes.apa");
 
-	deque<int> LEDs;
-	int burnFirstInt;
-	inFile >> burnFirstInt;
+	set<int> LEDs;
 
-	for (int nextInt; inFile >> nextInt; inFile >> nextInt) // grab every second int
+	int nextInt;
+	while (inFile >> nextInt && inFile >> nextInt) // read every second integer only, these represent the LED number
 	{
-		LEDs.push_back(nextInt);
+		LEDs.insert(nextInt);
 	}
 
-	for (int i = 0; i < numLEDs; i++)
+	for (int i = 1; i <= numLEDs; i++)
 	{
-		if (i == LEDs.front())
+		set<int>::iterator it = LEDs.find(i);
+		if (it != LEDs.end())
 		{
 			outFile << brightness << " " << red << " " << green << " " << blue << endl;
-			LEDs.pop_front();
+			LEDs.erase(it);
 		}
 		else
 		{
