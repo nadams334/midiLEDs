@@ -19,7 +19,7 @@ int main()
 	inFile.open("noteMapping.cfg");
 
 	ofstream outFile;
-	outFile.open("all_keyboards_notes.apa");
+	outFile.open("all_keyboard_notes.apa");
 
 	deque<int> LEDs;
 	int burnFirstInt;
