@@ -315,6 +315,8 @@ void init()
 	
 	// ignore sysex, timing, or active sensing messages.
 	midiin->ignoreTypes( true, true, true );
+
+	fprintf(stdout, "\nReady to interpret MIDI input data.\n");
 }
 
 void loop()
