@@ -6,6 +6,7 @@
 #include <csignal>
 #include <cmath>
 #include <string.h>
+#include <chrono>
 
 #include "bcm2835.h"
 #include "RtMidi.h"
@@ -24,8 +25,12 @@ const unsigned char ccStatusCodeMin = (unsigned char)0xB0;
 const unsigned char ccStatusCodeMax = (unsigned char)0xBF;
 
 
+const long UPDATE_COOLDOWN_MICROSECONDS = 5000;
+std::chrono::high_resolution_clock::time_point ticks;
+
+
 int* keyboard; // mapping from note number to LED number
-char* LEDdata; // byte buffer to be sent to WPA102 LED strip
+char* LEDdata; // byte buffer to be sent to APA102 LED strip
 const int numLEDs = 288;
 const int bytesPerLED = 4;
 const int startFrameSize = 4;
@@ -52,7 +57,18 @@ RtMidiIn* midiin;
 
 void update()
 {
-	bcm2835_spi_writenb(LEDdata, numBytes);
+	bool shouldUpdate = true;
+
+	if (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now()-ticks).count()/1000 < UPDATE_COOLDOWN_MICROSECONDS)
+	{
+		shouldUpdate = false;
+	}
+
+	if (shouldUpdate)
+	{
+		ticks = std::chrono::high_resolution_clock::now();
+		bcm2835_spi_writenb(LEDdata, numBytes);
+	}
 }
 
 void set_LED(int channel, int note, int velocity)
@@ -144,7 +160,8 @@ void signal_handler(int signal)
 
 void init()
 {
-	
+	ticks = std::chrono::high_resolution_clock::now();
+
 	// Signal handler
 	
 	signal(SIGINT, signal_handler);
