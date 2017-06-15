@@ -29,7 +29,7 @@ int main()
 		LEDs.insert(nextInt);
 	}
 
-	for (int i = 1; i <= numLEDs; i++)
+	for (int i = 0; i < numLEDs; i++)
 	{
 		set<int>::iterator it = LEDs.find(i);
 		if (it != LEDs.end())
