@@ -9,7 +9,7 @@ const int numLEDs = 288;
 const int brightness = 1;
 const int red = 255;
 const int green = 0;
-const int blue = 255;
+const int blue = 0;
 
 
 int main()
