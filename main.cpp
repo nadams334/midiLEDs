@@ -255,7 +255,7 @@ void init()
 	}
 	
 	
-	// Initialize WPA102 LED strip data buffer
+	// Initialize APA102 LED strip data buffer
 	
 	LEDdata = new char[startFrameSize + numBytes + endFrameSize];
 
@@ -284,7 +284,7 @@ void init()
 	numBytes += endFrameSize;
 	
 	
-	// Initialize bcm2835 for WPA102 LED strip communication
+	// Initialize bcm2835 for APA102 LED strip communication
 	
 	if (!bcm2835_init())
 	{
@@ -315,7 +315,6 @@ void init()
 	
 	// ignore sysex, timing, or active sensing messages.
 	midiin->ignoreTypes( true, true, true );
-	
 }
 
 void loop()
