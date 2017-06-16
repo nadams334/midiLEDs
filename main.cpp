@@ -25,7 +25,7 @@ const unsigned char ccStatusCodeMin = (unsigned char)0xB0;
 const unsigned char ccStatusCodeMax = (unsigned char)0xBF;
 
 
-const long UPDATE_COOLDOWN_MICROSECONDS = 5000;
+const long UPDATE_COOLDOWN_MICROSECONDS = 1000;
 std::chrono::high_resolution_clock::time_point ticks;
 
 
