@@ -25,7 +25,7 @@ const unsigned char ccStatusCodeMin = (unsigned char)0xB0;
 const unsigned char ccStatusCodeMax = (unsigned char)0xBF;
 
 
-const long UPDATE_COOLDOWN_MICROSECONDS = 1000;
+const long UPDATE_COOLDOWN_MICROSECONDS = 100;
 std::chrono::high_resolution_clock::time_point ticks;
 
 
@@ -43,13 +43,16 @@ const int numChannels = 16;
 const int numNotes = 128;
 
 bool dynamic_colors = false;
-int cc_red = 256;
-int cc_green = 256;
-int cc_blue = 256;
+int cc_red = 24;
+int cc_green = 25;
+int cc_blue = 26;
 
 int* red;
 int* green;
 int* blue;
+
+bool* channelNeedsUpdateMessage;
+int cc_update = 30;
 
 
 RtMidiIn* midiin;
@@ -95,7 +98,8 @@ void set_LED(int channel, int note, int velocity)
 	LEDdata[startFrameSize+bytesPerLED*(num)+2] = g;
 	LEDdata[startFrameSize+bytesPerLED*(num)+3] = r;
 	
-	update();
+	if (channelNeedsUpdateMessage[channel] == false)
+		update();
 }
 
 void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
@@ -116,7 +120,12 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 		int value = (int) message->at(2);
 		int channel = code - (int) ccStatusCodeMin;
 
-		if (dynamic_colors)
+		if (ccCode == cc_update)
+		{
+			update();
+		}
+
+		else if (dynamic_colors)
 		{
 			if (ccCode == cc_red)
 				red[channel] = value;
@@ -207,6 +216,7 @@ void init()
 	red = new int[numChannels];
 	green = new int[numChannels];
 	blue = new int[numChannels];
+	channelNeedsUpdateMessage = new bool[numChannels];
 	
 	std::ifstream colorMappingFile;
 	colorMappingFile.open(colorMappingFilename);
@@ -221,16 +231,11 @@ void init()
 		red[i] = 255;
 		green[i] = 255;
 		blue[i] = 255;
+		channelNeedsUpdateMessage[i] = false;
 	}
 	
 	if (colorMappingFile.is_open())
 	{
-		// Dynamic color messages
-		
-		colorMappingFile >> cc_red;
-		colorMappingFile >> cc_green;
-		colorMappingFile >> cc_blue;
-
 		while ( !colorMappingFile.eof() )
 		{
 			// Static channel colors
@@ -239,6 +244,15 @@ void init()
 			colorMappingFile >> r;
 			colorMappingFile >> g;
 			colorMappingFile >> b;
+
+			bool chnlNeedsUpdateMessage = false;
+
+			if (chnl < 0)
+			{
+				chnl = 0 - chnl; // convert to positive equivalent
+				chnlNeedsUpdateMessage = true;
+			}
+
 			if (chnl < 1 || chnl > 16)
 			{
 				std::cerr << "Error in (" << colorMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
@@ -262,6 +276,9 @@ void init()
 			red[chnl-1] = r;
 			green[chnl-1] = g;
 			blue[chnl-1] = b;
+			
+			if (chnlNeedsUpdateMessage)
+				channelNeedsUpdateMessage[chnl-1] = true;
 		}
 		colorMappingFile.close();
 	}
