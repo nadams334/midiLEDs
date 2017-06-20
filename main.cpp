@@ -1,15 +1,79 @@
-// main.cpp
+// midiLEDs
+// Author: Nathan Adams
+// 2016-2017
+
 #include <iostream>
-#include <vector>
 #include <fstream>
 #include <cstdlib>
 #include <csignal>
 #include <cmath>
 #include <string.h>
 #include <chrono>
+#include <vector>
+#include <deque>
 
 #include "bcm2835.h"
 #include "RtMidi.h"
+
+
+
+class LED_MESSAGE
+{
+	
+	private:
+	
+	int chnl;
+	int LED_NUM;
+	int brightness;
+	int r;
+	int g;
+	int b;
+	
+	
+	public:
+	
+	LED_MESSAGE(int channel, int LED_number, int brightness_level, int red, int green, int blue)
+	{
+		chnl = channel;
+		LED_NUM = LED_number;
+		brightness = brightness_level;
+		r = red;
+		g = green;
+		b = blue;
+		
+	}
+	
+	int getChannel()
+	{
+		return chnl;
+	}
+	
+	int GET_LED_NUM()
+	{
+		return LED_NUM;
+	}
+	
+	int getBrightness()
+	{
+		return brightness;
+	}
+	
+	int getRed()
+	{
+		return r;
+	}
+	
+	int getGreen()
+	{
+		return g;
+	}
+	
+	int getBlue()
+	{
+		return b;
+	}
+	
+};
 
 
 const char* noteMappingFilename = "config/noteMapping.cfg";
@@ -25,7 +89,7 @@ const unsigned char ccStatusCodeMin = (unsigned char)0xB0;
 const unsigned char ccStatusCodeMax = (unsigned char)0xBF;
 
 
-const long UPDATE_COOLDOWN_MICROSECONDS = 100;
+const long UPDATE_COOLDOWN_MICROSECONDS = 50;
 std::chrono::high_resolution_clock::time_point ticks;
 
 
@@ -34,7 +98,7 @@ char* LEDdata; // byte buffer to be sent to APA102 LED strip
 const int numLEDs = 288;
 const int bytesPerLED = 4;
 const int startFrameSize = 4;
-const int endFrameSize = (numLEDs/2)/8 + 1;
+//const int endFrameSize = (numLEDs/2)/8 + 1;
 uint32_t numBytes = numLEDs * bytesPerLED;
 
 
@@ -52,13 +116,33 @@ int* green;
 int* blue;
 
 bool* channelNeedsUpdateMessage;
-int cc_update = 30;
+int cc_update_channel = 30;
+int cc_update_all = 31;
+
+std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
+std::vector<LED_MESSAGE*> pending_LED_messages[numChannels];
 
 
 RtMidiIn* midiin;
 
 
-void update()
+
+
+void set_LED(LED_MESSAGE* message)
+{
+	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())] = 0xE0 + message->getBrightness();
+	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())+1] = message->getBlue();
+	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())+2] = message->getGreen();
+	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())+3] = message->getRed();
+}
+
+void write_LED_data()
+{
+	ticks = std::chrono::high_resolution_clock::now();
+	bcm2835_spi_writenb(LEDdata, numBytes);
+}
+
+void update(int channel)
 {
 	bool shouldUpdate = true;
 
@@ -69,20 +153,57 @@ void update()
 
 	if (shouldUpdate)
 	{
-		ticks = std::chrono::high_resolution_clock::now();
-		bcm2835_spi_writenb(LEDdata, numBytes);
+		// set any pending LEDs
+		/*if (channel < 0) // update all
+		{
+			for (int c = 0; c < numChannels; c++)
+			{
+				for (unsigned int i = 0; i < pending_LED_messages[c].size(); i++)
+				{
+					set_LED(pending_LED_messages[c][i]);
+				}
+				pending_LED_messages[c].clear();
+			}
+		}
+		else if (channel < numChannels) // update just this channel
+		{
+			if (channelNeedsUpdateMessage[channel])
+			{
+				for (unsigned int i = 0; i < pending_LED_messages[channel].size(); i++)
+				{
+					set_LED(pending_LED_messages[channel][i]);
+				}
+				pending_LED_messages[channel].clear();
+			}
+		}
+		else // error
+		{
+			std::cerr << "WARNING: Internal error: Attempted to update channel " << channel << ". Skipping update." << std::endl;
+		}*/
+		
+		write_LED_data();
 	}
 }
 
-void set_LED(int channel, int note, int velocity)
+int ceiling(int dividend, int divisor)
 {
-	int num = keyboard[note];
+	return (dividend / divisor) + ((dividend % divisor) != 0);
+}
 
-	if (num < 0 ) return; // note not on piano
+const int endFrameSize = ceiling(numLEDs/2, 8);
+
+void setNote(int channel, int note, int velocity)
+{
+	int key = keyboard[note];
+
+	if (key < 0 ) return; // note not on piano
 	
 	int r = red[channel];
 	int g = green[channel];
 	int b = blue[channel];
+	
+	int brightness = ceiling(velocity, dimnessFactor);
+	
 	
 	if (r < 0)
 		r = ( rand() % std::abs(r) ) + 1; // random number between 1 and inputted value
@@ -93,13 +214,60 @@ void set_LED(int channel, int note, int velocity)
 	if (b < 0)
 		b = ( rand() % std::abs(b) ) + 1; // random number between 1 and inputted value
 	
-	LEDdata[startFrameSize+bytesPerLED*(num)] = 0xE0 + (velocity / dimnessFactor + (velocity % dimnessFactor != 0)); // ceiling(velocity/dimnessFactor)
-	LEDdata[startFrameSize+bytesPerLED*(num)+1] = b;
-	LEDdata[startFrameSize+bytesPerLED*(num)+2] = g;
-	LEDdata[startFrameSize+bytesPerLED*(num)+3] = r;
 	
-	if (channelNeedsUpdateMessage[channel] == false)
-		update();
+	LED_MESSAGE* message = new LED_MESSAGE(channel, key, brightness, r, g, b);
+	
+	if (brightness > 0) // turning note on
+	{
+		// indicate that this channel is the most recent channel to turn this note on
+		activeMessagesForNote[note].push_back(message);
+	}
+	
+	else if (brightness == 0) // turning note off
+	{
+		// need to check if any other channels still have this note turned on before turning LED off
+		if (!activeMessagesForNote[note].empty())
+		{
+			// Indicate that this note is no longer active for this channel
+			for (unsigned int i = 0; i < activeMessagesForNote[note].size(); i++)
+			{
+				if (activeMessagesForNote[note][i]->getChannel() == channel)
+				{
+					activeMessagesForNote[note].erase(activeMessagesForNote[note].begin()+i);
+				}
+			}
+			
+			if (!activeMessagesForNote[note].empty() && !channelNeedsUpdateMessage[channel]) // this note is still active for another channel
+			{
+				// need to set LED back to its previous color
+				message = activeMessagesForNote[note].back();
+			}
+		}
+		else // this note is not currently active on any channels
+		{
+			// continue to disable LED (set to 0 brightness)
+		}
+	}
+	
+	else
+	{
+		std::cerr << "WARNING: Invalid velocity for note " << note << " on channel " << channel << ". Note message ignored." << std::endl;
+		return;
+	}
+	
+
+	set_LED(message);
+	
+	if (channelNeedsUpdateMessage[channel])
+	{
+		//pending_LED_messages[channel].push_back(message);
+	}
+	else
+	{
+		//set_LED(message);
+		update(channel);
+	}
+	
 }
 
 void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
@@ -108,11 +276,11 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
 	{
-		set_LED(code - noteOnCodeMin, message->at(1), message->at(2));
+		setNote(code - noteOnCodeMin, message->at(1), message->at(2));
 	}	
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
 	{
-		set_LED(code - noteOffCodeMin, message->at(1), 0);
+		setNote(code - noteOffCodeMin, message->at(1), 0);
 	}
 	else if (code >= ccStatusCodeMin && code <= ccStatusCodeMax)
 	{
@@ -120,9 +288,14 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 		int value = (int) message->at(2);
 		int channel = code - (int) ccStatusCodeMin;
 
-		if (ccCode == cc_update)
+		if (ccCode == cc_update_channel)
 		{
-			update();
+			update(channel);
+		}
+		
+		else if (ccCode == cc_update_all)
+		{
+			update(-1);
 		}
 
 		else if (dynamic_colors)
@@ -149,7 +322,7 @@ void clear_LEDs()
 		LEDdata[i+2] = 0;
 		LEDdata[i+3] = 0;
 	}
-	update();
+	write_LED_data();
 }
 
 int end(int status)
@@ -311,7 +484,7 @@ void init()
 	// Generate end frame
 	for (unsigned int i = startFrameSize + numBytes; i < startFrameSize + numBytes + endFrameSize; i++)
 	{
-		LEDdata[i] = 0x00;
+		LEDdata[i] = 0xFF;
 	}
 
 	numBytes += startFrameSize;
@@ -350,7 +523,7 @@ void init()
 	// ignore sysex, timing, or active sensing messages.
 	midiin->ignoreTypes( true, true, true );
 
-	fprintf(stdout, "\nReady to interpret MIDI input data.\n");
+	fprintf(stdout, "\nReady to interpret MIDI input data through the RtMidi Input Client.\n");
 }
 
 void loop()
