@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <unistd.h>
 #include <cstdlib>
 #include <csignal>
 #include <cmath>
@@ -94,6 +95,7 @@ std::chrono::high_resolution_clock::time_point ticks;
 
 
 int* keyboard; // mapping from note number to LED number
+int* noteboard; // reverse mapping
 char* LEDdata; // byte buffer to be sent to APA102 LED strip
 const int numLEDs = 288;
 const int bytesPerLED = 4;
@@ -119,7 +121,10 @@ bool* channelNeedsUpdateMessage;
 int cc_update_channel = 30;
 int cc_update_all = 31;
 
+int cc_sostenuto = 66;
+
 std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
+std::vector<LED_MESSAGE*> sostenutoMessages[numChannels];
 std::vector<LED_MESSAGE*> pending_LED_messages[numChannels];
 
 
@@ -129,7 +134,16 @@ RtMidiIn* midiin;
 
 
 void set_LED(LED_MESSAGE* message)
-{
+{	/*
+	std::cout << "Loading the following LED_MESSAGE: " << std::endl;
+	std::cout << "Channel: " << message->getChannel() << std::endl;
+	std::cout << "LED_NUM: " << message->GET_LED_NUM() << std::endl;
+	std::cout << "Brightness: " << message->getBrightness() << std::endl;
+	std::cout << "Red: " << message->getRed() << std::endl;
+	std::cout << "Green: " << message->getGreen() << std::endl;
+	std::cout << "Blue: " << message->getBlue() << std::endl;
+	std::cout << std::endl;
+	*/
 	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())] = 0xE0 + message->getBrightness();
 	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())+1] = message->getBlue();
 	LEDdata[startFrameSize+bytesPerLED*(message->GET_LED_NUM())+2] = message->getGreen();
@@ -145,16 +159,16 @@ void write_LED_data()
 void update(int channel)
 {
 	bool shouldUpdate = true;
-
+	/*
 	if (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now()-ticks).count()/1000 < UPDATE_COOLDOWN_MICROSECONDS)
 	{
 		shouldUpdate = false;
 	}
-
+	*/
 	if (shouldUpdate)
-	{
+	{	/*
 		// set any pending LEDs
-		/*if (channel < 0) // update all
+		if (channel < 0) // update all
 		{
 			for (int c = 0; c < numChannels; c++)
 			{
@@ -179,8 +193,8 @@ void update(int channel)
 		else // error
 		{
 			std::cerr << "WARNING: Internal error: Attempted to update channel " << channel << ". Skipping update." << std::endl;
-		}*/
-		
+		}
+		*/
 		write_LED_data();
 	}
 }
@@ -234,6 +248,7 @@ void setNote(int channel, int note, int velocity)
 				if (activeMessagesForNote[note][i]->getChannel() == channel)
 				{
 					activeMessagesForNote[note].erase(activeMessagesForNote[note].begin()+i);
+					break;
 				}
 			}
 			
@@ -288,7 +303,54 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 		int value = (int) message->at(2);
 		int channel = code - (int) ccStatusCodeMin;
 
-		if (ccCode == cc_update_channel)
+		if (ccCode == cc_sostenuto)
+		{
+			if (value > 0) // turning on
+			{
+				// need to save all currently active LEDs
+				for (int i = 0; i < numNotes; i++)
+				{
+					unsigned int size = activeMessagesForNote[i].size();
+					for (unsigned int j = 0; j < size; j++)
+					{
+						LED_MESSAGE* ledMessage = activeMessagesForNote[i][j];
+
+						int messageChannel = ledMessage->getChannel();
+						if (messageChannel == channel)
+						{
+							activeMessagesForNote[i].push_back(ledMessage);
+							sostenutoMessages[channel].push_back(ledMessage);
+						}
+					}
+				}
+				/*
+				std::cout << "Sostenuto messages after on: " << std::endl;
+				for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
+				{
+					LED_MESSAGE* message = sostenutoMessages[channel][i];
+					std::cout << "Message #" << i << ": " << std::endl;
+					std::cout << "Channel: " << message->getChannel() << std::endl;
+					std::cout << "LED_NUM: " << message->GET_LED_NUM() << std::endl;
+					std::cout << "Brightness: " << message->getBrightness() << std::endl;
+					std::cout << "Red: " << message->getRed() << std::endl;
+					std::cout << "Green: " << message->getGreen() << std::endl;
+					std::cout << "Blue: " << message->getBlue() << std::endl;
+					std::cout << std::endl;
+				}
+				*/
+			}
+			else // turning off
+			{
+				// need to clear all saved LEDs from previous on message
+				for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
+				{
+					LED_MESSAGE* ledMessage = sostenutoMessages[channel][i];
+					setNote(ledMessage->getChannel(), noteboard[ledMessage->GET_LED_NUM()], 0); // send note off message
+				}
+				sostenutoMessages[channel].clear();
+			}
+		}
+		else if (ccCode == cc_update_channel)
 		{
 			update(channel);
 		}
@@ -315,29 +377,34 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 
 void clear_LEDs()
 {
-	for (int i = startFrameSize; i < numLEDs * bytesPerLED + startFrameSize; i+=4)
+	usleep(500000);
+	for (int i = 0; i < numLEDs; i++)
 	{
-		LEDdata[i] = 0xE0 + 0;
-		LEDdata[i+1] = 0;
-		LEDdata[i+2] = 0;
-		LEDdata[i+3] = 0;
+		set_LED(new LED_MESSAGE(0, i, 0, 0, 0, 0));
 	}
+	usleep(500000);
 	write_LED_data();
 }
 
 int end(int status)
 {
-	clear_LEDs();
+	//clear_LEDs();
 	bcm2835_spi_end();
 	bcm2835_close();
 	delete midiin;
 	return status;
 }
 
+bool receivedTerminate = false;
+
 void signal_handler(int signal)
 {
-    fprintf(stdout, "\nReceived signal %d. Exiting...\n", signal);
-    end(0);
+	if (!receivedTerminate)
+	{
+		receivedTerminate = true;
+		fprintf(stdout, "\nReceived signal %d. Exiting...\n", signal);
+		end(0);
+	}
 }
 
 void init()
@@ -356,6 +423,7 @@ void init()
 	// MIDI note - LED position mapping
 	
 	keyboard = new int[numNotes];
+	noteboard = new int[numLEDs];
 	std::ifstream noteMappingFile;
 	noteMappingFile.open(noteMappingFilename);
 	int key = 0;
@@ -365,6 +433,11 @@ void init()
 	{
 		keyboard[i] = -1;
 	}
+
+	for (int i = 0; i < numLEDs; i++)
+	{
+		noteboard[i] = -1;
+	}
 	
 	if (noteMappingFile.is_open())
 	{
@@ -373,6 +446,7 @@ void init()
 			noteMappingFile >> key;
 			noteMappingFile >> LED;
 			keyboard[key] = LED;
+			noteboard[LED] = key;
 		}
 		noteMappingFile.close();
 	}
@@ -382,7 +456,19 @@ void init()
 		std::cerr << "Could not open MIDI-LED note mapping configuration file: " << noteMappingFilename << "\nExiting..." << std::endl;
 		end(1);
 	}
-	
+	/*
+	for (int i = 0; i < numNotes; i++)
+	{
+		std::cout << "keyboard[" << i << "]: " << keyboard[i] << std::endl;
+	}
+
+	std::cout << std::endl;
+
+	for (int i = 0; i < numLEDs; i++)
+	{
+		std::cout << "noteboard[" << i << "]: " << noteboard[i] << std::endl;
+	}
+	*/
 	
 	// MIDI channel - LED color mapping
 
