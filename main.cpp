@@ -109,9 +109,9 @@ const int numChannels = 16;
 const int numNotes = 128;
 
 bool dynamic_colors = false;
-int cc_red = 24;
-int cc_green = 25;
-int cc_blue = 26;
+int cc_red = 16;
+int cc_green = 17;
+int cc_blue = 18;
 
 int* red;
 int* green;
