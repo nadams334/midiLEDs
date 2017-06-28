@@ -16,7 +16,7 @@
 #include "bcm2835.h"
 #include "RtMidi.h"
 
-typedef void (*funcPtr)(void);
+typedef void (*funcPtr)();
 
 class Command
 {
@@ -139,6 +139,9 @@ bool dynamic_colors = false;
 int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
+
+int mostRecentNoteMessageChannel = 0;
+int mostRecentControlChangeChannel = 0;
 
 int* redConfig;
 int* greenConfig;
@@ -324,17 +327,27 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
 	{
-		setNote(code - noteOnCodeMin, message->at(1), message->at(2));
+		int channel = code - noteOnCodeMin;
+
+		mostRecentNoteMessageChannel = channel;
+
+		setNote(channel, message->at(1), message->at(2));
 	}	
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
 	{
-		setNote(code - noteOffCodeMin, message->at(1), 0);
+		int channel = code - noteOffCodeMin;
+
+		mostRecentNoteMessageChannel = channel;
+
+		setNote(channel, message->at(1), 0);
 	}
 	else if (code >= ccStatusCodeMin && code <= ccStatusCodeMax)
 	{
 		int ccCode = (int) message->at(1);
 		int value = (int) message->at(2);
 		int channel = code - (int) ccStatusCodeMin;
+
+		mostRecentControlChangeChannel = channel;
 
 		if (ccCode == cc_sostenuto)
 		{
@@ -404,7 +417,6 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 			else if (ccCode == cc_blue)
 				blue[channel] = value;
 
-			std::cout << "Channel " << channel << " set to color RGB=" << red[channel] << "." << green[channel] << "." << blue[channel] << std::endl;
 		}
 	}
 }
@@ -458,6 +470,23 @@ void toggleDynamicColors()
 	}
 }
 
+void displayColorValues(int channel)
+{
+	if (channel >= 0 && channel < numChannels)
+	{
+		fprintf(stdout, "Current color for channel %d is RGB=%03d.%03d.%03d\n", channel+1, red[channel], green[channel], blue[channel]);
+	}
+	else
+	{
+		std::cerr << "ERROR: Invalid channel (" << channel << ") passed to displayColorValues(). Ignoring request." << std::endl;
+	}
+}
+
+void displayColorValues()
+{
+	displayColorValues(mostRecentControlChangeChannel);
+}
+
 void end(int status)
 {
 	//clear_LEDs();
@@ -487,6 +516,7 @@ void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
 	commands.push_back(new Command("Enable/Disable Color Parameters", &toggleDynamicColors));
+	commands.push_back(new Command("Display Color Values", &displayColorValues));
 }
 
 void init()
