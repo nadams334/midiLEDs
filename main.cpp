@@ -16,7 +16,7 @@
 #include "bcm2835.h"
 #include "RtMidi.h"
 
-typedef void (*funcPtr)();
+typedef void (*funcPtr)(void);
 
 class Command
 {
@@ -140,8 +140,7 @@ int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
 
-int mostRecentNoteMessageChannel = 0;
-int mostRecentControlChangeChannel = 0;
+int mostRecentColorMessageChannel = -1;
 
 int* redConfig;
 int* greenConfig;
@@ -328,17 +327,11 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
 	{
 		int channel = code - noteOnCodeMin;
-
-		mostRecentNoteMessageChannel = channel;
-
 		setNote(channel, message->at(1), message->at(2));
 	}	
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
 	{
 		int channel = code - noteOffCodeMin;
-
-		mostRecentNoteMessageChannel = channel;
-
 		setNote(channel, message->at(1), 0);
 	}
 	else if (code >= ccStatusCodeMin && code <= ccStatusCodeMax)
@@ -346,8 +339,6 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 		int ccCode = (int) message->at(1);
 		int value = (int) message->at(2);
 		int channel = code - (int) ccStatusCodeMin;
-
-		mostRecentControlChangeChannel = channel;
 
 		if (ccCode == cc_sostenuto)
 		{
@@ -417,6 +408,7 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 			else if (ccCode == cc_blue)
 				blue[channel] = value;
 
+			mostRecentColorMessageChannel = channel;
 		}
 	}
 }
@@ -455,6 +447,13 @@ void resetColors()
 	std::cout << "All channels reset to default color configuration." << std::endl;
 }
 
+void displayColorMessageCodes()
+{
+	std::cout << "Send MIDI Control Change #" << cc_red << " to adjust the channel's red value." << std::endl;
+	std::cout << "Send MIDI Control Change #" << cc_green << " to adjust the channel's green value." << std::endl;
+	std::cout << "Send MIDI Control Change #" << cc_blue << " to adjust the channel's blue value." << std::endl;
+}
+
 void toggleDynamicColors()
 {
 	if (dynamic_colors)
@@ -466,6 +465,7 @@ void toggleDynamicColors()
 	else
 	{
 		dynamic_colors = true;
+		mostRecentColorMessageChannel = -1;
 		std::cout << "Color parameters enabled." << std::endl;
 	}
 }
@@ -482,9 +482,23 @@ void displayColorValues(int channel)
 	}
 }
 
-void displayColorValues()
+void displayCustomColorValues()
 {
-	displayColorValues(mostRecentControlChangeChannel);
+	if (!dynamic_colors)
+	{
+		std::cout << "Color parameters are disabled." << std::endl;
+	}
+	else if (mostRecentColorMessageChannel < 0)
+	{
+		std::cout << "No color messages have been received yet." << std::endl;
+	}
+	else
+	{
+		std::cout << "Last color message received was on channel " << mostRecentColorMessageChannel+1 << "." << std::endl;
+		return displayColorValues(mostRecentColorMessageChannel);
+	}
+
+	std::cout << "All channels are set to default color configuration." << std::endl;
 }
 
 void end(int status)
@@ -516,7 +530,8 @@ void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
 	commands.push_back(new Command("Enable/Disable Color Parameters", &toggleDynamicColors));
-	commands.push_back(new Command("Display Color Values", &displayColorValues));
+	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
+	commands.push_back(new Command("Display Color Change Message Info", &displayColorMessageCodes));
 }
 
 void init()
@@ -750,6 +765,7 @@ void loop()
 			funcPtr commandFunctionPointer = command->getFunctionPointer();
 			std::cout << "Executing command: " << command->getName() << std::endl;
 			commandFunctionPointer();
+			std::cout << std::endl;
 		}
 	}
 	std::cout << std::endl << "Received EOF." << std::endl;
