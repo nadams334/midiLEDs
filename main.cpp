@@ -415,6 +415,17 @@ void clear_LEDs()
 	{
 		set_LED(new LED_MESSAGE(0, i, 0, 0, 0, 0));
 	}
+
+	for (int i = 0; i < numNotes; i++)
+	{
+		activeMessagesForNote[i].clear();
+	}
+
+	for(int i = 0; i < numChannels; i++)
+	{
+		sostenutoMessages[i].clear();
+	}
+
 	write_LED_data();
 
 	std::cout << "LEDs cleared." << std::endl;
