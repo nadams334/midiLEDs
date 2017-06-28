@@ -16,12 +16,39 @@
 #include "bcm2835.h"
 #include "RtMidi.h"
 
+typedef void (*funcPtr)(void);
 
+class Command
+{
+
+private:
+
+	std::string name;
+	funcPtr functionPtr;
+	
+public:
+
+	Command(std::string nameArg, funcPtr functionPtrArg)
+	{
+		name = nameArg;
+		functionPtr = functionPtrArg;
+	}
+
+	std::string getName()
+	{
+		return name;
+	}
+
+	funcPtr getFunctionPointer()
+	{
+		return functionPtr;
+	}
+};
 
 class LED_MESSAGE
 {
 	
-	private:
+private:
 	
 	int chnl;
 	int LED_NUM;
@@ -31,7 +58,7 @@ class LED_MESSAGE
 	int b;
 	
 	
-	public:
+public:
 	
 	LED_MESSAGE(int channel, int LED_number, int brightness_level, int red, int green, int blue)
 	{
@@ -113,6 +140,10 @@ int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
 
+int* redConfig;
+int* greenConfig;
+int* blueConfig;
+
 int* red;
 int* green;
 int* blue;
@@ -126,6 +157,8 @@ int cc_sostenuto = 66;
 std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
 std::vector<LED_MESSAGE*> sostenutoMessages[numChannels];
 std::vector<LED_MESSAGE*> pending_LED_messages[numChannels];
+
+std::vector<Command*> commands;
 
 
 RtMidiIn* midiin;
@@ -166,7 +199,7 @@ void update(int channel)
 	}
 	*/
 	if (shouldUpdate)
-	{	/*
+	{	
 		// set any pending LEDs
 		if (channel < 0) // update all
 		{
@@ -194,7 +227,7 @@ void update(int channel)
 		{
 			std::cerr << "WARNING: Internal error: Attempted to update channel " << channel << ". Skipping update." << std::endl;
 		}
-		*/
+		
 		write_LED_data();
 	}
 }
@@ -277,7 +310,7 @@ void setNote(int channel, int note, int velocity)
 	{
 		//pending_LED_messages[channel].push_back(message);
 	}
-	else
+	else // update immediately, do not wait for update message
 	{
 		//set_LED(message);
 		update(channel);
@@ -371,40 +404,78 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 			else if (ccCode == cc_blue)
 				blue[channel] = value;
 
+			std::cout << "Channel " << channel << " set to color RGB=" << red[channel] << "." << green[channel] << "." << blue[channel] << std::endl;
 		}
 	}
 }
 
 void clear_LEDs()
 {
-	usleep(500000);
 	for (int i = 0; i < numLEDs; i++)
 	{
 		set_LED(new LED_MESSAGE(0, i, 0, 0, 0, 0));
 	}
-	usleep(500000);
 	write_LED_data();
+
+	std::cout << "LEDs cleared." << std::endl;
 }
 
-int end(int status)
+void resetColors()
+{
+	for (int channel = 0; channel < numChannels; channel++)
+	{
+		red[channel] = redConfig[channel];
+		green[channel] = greenConfig[channel];
+		blue[channel] = blueConfig[channel];
+	}
+
+	std::cout << "All channels reset to default color configuration." << std::endl;
+}
+
+void toggleDynamicColors()
+{
+	if (dynamic_colors)
+	{
+		dynamic_colors = false;
+		std::cout << "Color parameters disabled." << std::endl;
+		resetColors();
+	}
+	else
+	{
+		dynamic_colors = true;
+		std::cout << "Color parameters enabled." << std::endl;
+	}
+}
+
+void end(int status)
 {
 	//clear_LEDs();
 	bcm2835_spi_end();
 	bcm2835_close();
 	delete midiin;
-	return status;
+	exit(status);
 }
 
-bool receivedTerminate = false;
+void end()
+{
+	end(0);
+}
 
 void signal_handler(int signal)
 {
-	if (!receivedTerminate)
+	fprintf(stdout, "\nReceived signal %d. Send EOF (Ctrl+D) to quit.\n", signal);
+	std::cout << "Enter (code) to issue command:" << std::endl;
+	for (unsigned int i = 0; i < commands.size(); i++)
 	{
-		receivedTerminate = true;
-		fprintf(stdout, "\nReceived signal %d. Exiting...\n", signal);
-		end(0);
+		fprintf(stdout, "(%d) %s\n", i+1, commands[i]->getName().c_str());
 	}
+	std::cout << std::endl; 
+}
+
+void createCommandList()
+{
+	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
+	commands.push_back(new Command("Enable/Disable Color Parameters", &toggleDynamicColors));
 }
 
 void init()
@@ -416,6 +487,8 @@ void init()
 	signal(SIGINT, signal_handler);
 	
 	srand(time(NULL));
+
+	createCommandList();
 	
 	
 	// Load config files
@@ -472,6 +545,10 @@ void init()
 	
 	// MIDI channel - LED color mapping
 
+	redConfig = new int[numChannels];
+	greenConfig = new int[numChannels];
+	blueConfig = new int[numChannels];
+
 	red = new int[numChannels];
 	green = new int[numChannels];
 	blue = new int[numChannels];
@@ -487,9 +564,12 @@ void init()
 	
 	for (int i = 0; i < numChannels; i++)
 	{
-		red[i] = 255;
-		green[i] = 255;
-		blue[i] = 255;
+		redConfig[i] = 1;
+		greenConfig[i] = 1;
+		blueConfig[i] = 1;
+		red[i] = redConfig[i];
+		green[i] = greenConfig[i];
+		blue[i] = blueConfig[i];
 		channelNeedsUpdateMessage[i] = false;
 	}
 	
@@ -532,9 +612,13 @@ void init()
 				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between -255 and 255 (was " << b << ").\nExiting..." << std::endl;
 				end(1);
 			}	
-			red[chnl-1] = r;
-			green[chnl-1] = g;
-			blue[chnl-1] = b;
+			redConfig[chnl-1] = r;
+			greenConfig[chnl-1] = g;
+			blueConfig[chnl-1] = b;
+
+			red[chnl-1] = redConfig[chnl-1];
+			green[chnl-1] = greenConfig[chnl-1];
+			blue[chnl-1] = blueConfig[chnl-1];
 			
 			if (chnlNeedsUpdateMessage)
 				channelNeedsUpdateMessage[chnl-1] = true;
@@ -615,24 +699,28 @@ void init()
 void loop()
 {
 	char input;
-	std::cin.get(input);
+	while (std::cin.get(input))
+	{
+		if (input >= '1' && input <= '9')
+		{
+			// Execute command
+			int commandIndex = input - '1';
+			Command* command = commands[commandIndex];
+			funcPtr commandFunctionPointer = command->getFunctionPointer();
+			std::cout << "Executing command: " << command->getName() << std::endl;
+			commandFunctionPointer();
+		}
+	}
+	std::cout << std::endl << "Received EOF." << std::endl;
 }
 
 int main(int argc, char** argv)
 {
-	// Parse args
-	for (int i = 0; i < argc; i++)
-	{
-		// Allow MIDI color change messages
-		if ( strcmp(argv[i], "-c") == 0 )
-		{
-			dynamic_colors = true;
-		}
-	}
-
 	init();
 	
 	loop();
 
-	return end(0);
+	std::cout << std::endl;
+
+	end(0);
 }
