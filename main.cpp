@@ -135,7 +135,8 @@ const int dimnessFactor = 8; // divide MIDI velocity by this amount when calcula
 const int numChannels = 16;
 const int numNotes = 128;
 
-bool vicTsingErrorCorrector = true;
+bool CH345ErrorCorrector = true;
+bool dataDump = false;
 
 bool dynamic_colors = false;
 int cc_red = 16;
@@ -145,6 +146,7 @@ int cc_blue = 18;
 const int MAX_VELOCITY = 127;
 
 int mostRecentColorMessageChannel = -1;
+std::vector<unsigned char>* lastMidiMessageReceived;
 
 int* redConfig;
 int* greenConfig;
@@ -233,6 +235,8 @@ void update(int channel)
 		{
 			std::cerr << "WARNING: Internal error: Attempted to update channel " << channel << ". Skipping update." << std::endl;
 		}
+
+		if (dataDump)	return;
 		
 		write_LED_data();
 	}
@@ -357,8 +361,51 @@ void handleSostenutoMessage(bool enable, int channel)
 	}
 }
 
+void dumpDataStructures()
+{
+	for (int note = 0; note < numNotes; note++)
+	{
+		for (unsigned int messageIndex = 0; messageIndex < activeMessagesForNote[note].size(); messageIndex++)
+		{
+			LED_MESSAGE* message = activeMessagesForNote[note][messageIndex];
+			fprintf(stdout, "activeMessagesForNote[%d][%d]: Channel=%d, LED=%d, Brightness=%d, RGB=%03d.%03d.%03d\n", note, messageIndex, message->getChannel(), message->GET_LED_NUM(), message->getBrightness(), message->getRed(), message->getGreen(), message->getBlue());
+		}
+	}
+
+	std::cout << std::endl;
+
+	for (int channel = 0; channel < numChannels; channel++)
+	{
+		for (unsigned int messageIndex = 0; messageIndex < sostenutoMessages[channel].size(); messageIndex++)
+		{
+			LED_MESSAGE* message = sostenutoMessages[channel][messageIndex];
+			fprintf(stdout, "sostenutoMessages[%d][%d]: Channel=%d, LED=%d, Brightness=%d, RGB=%03d.%03d.%03d\n", channel, messageIndex, message->getChannel(), message->GET_LED_NUM(), message->getBrightness(), message->getRed(), message->getGreen(), message->getBlue());
+		}
+	}
+}
+
+void dumpMidiData(std::vector<unsigned char>* message)
+{
+	for (unsigned int i = 0; i < message->size(); i++)
+	{
+		fprintf(stdout, "%02X ", message->at(i));
+	}
+	std::cout << std::endl;
+}
+
 void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message, void* userData)
 {
+	lastMidiMessageReceived->clear();
+	for (unsigned int i = 0; i < message->size(); i++)
+	{
+		lastMidiMessageReceived->push_back(message->at(i));
+	}
+
+	if (dataDump)
+	{
+		dumpMidiData(message);
+	}
+
 	int code = (int) message->at(0);
 
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
@@ -366,15 +413,17 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		int channel = code - noteOnCodeMin;
 
 		// Error correcting
-		if (vicTsingErrorCorrector && !channelNeedsUpdateMessage[channel])
+		if (CH345ErrorCorrector && !channelNeedsUpdateMessage[channel])
 		{
-			if (message->at(1) == cc_sostenuto && message->at(2) == MAX_VELOCITY)
+			if ((message->at(1) == cc_sostenuto) && 
+				((message->at(2) == MAX_VELOCITY)))
 			{
-				// Most likely this is a glitch with the VicTsing USB/MIDI adapter
-				// This should be treated as a sostuento instead of a max velocity F#5
-				// Unfortunately this will disable the ability to correctly interperet an actual max velocity F#5
+				// Most likely this is a glitch with the CH345 USB/MIDI adapter
+				// This should be treated as a sostuento instead of an F#4
+				// Unfortunately this will hinder the ability to correctly interperet an actual F#4
 			
-				handleSostenutoMessage(true, channel);
+				handleSostenutoMessage(message->at(2) > 0, channel);
+
 				return;
 			}
 			else if (message->at(1) == cc_red)
@@ -384,6 +433,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 					red[channel] = message->at(2);
 					mostRecentColorMessageChannel = channel;
 				}
+
 				return;
 			}
 			else if (message->at(1) == cc_green)
@@ -393,6 +443,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 					green[channel] = message->at(2);
 					mostRecentColorMessageChannel = channel;
 				}
+
 				return;
 			}
 			else if (message->at(1) == cc_blue)
@@ -402,6 +453,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 					blue[channel] = message->at(2);
 					mostRecentColorMessageChannel = channel;
 				}
+
 				return;
 			}
 		}
@@ -490,6 +542,24 @@ void displayColorMessageCodes()
 	std::cout << "Send MIDI Control Change #" << cc_blue << " to adjust the channel's blue value." << std::endl;
 }
 
+void toggleDataDump()
+{
+	if (dataDump)
+	{
+		dataDump = false;
+		std::cout << "Incoming MIDI data is no longer written to standard out." << std::endl;
+		std::cout << "Incoming MIDI data is now relayed to LEDs." << std::endl;
+	}
+	else
+	{
+		dataDump = true;
+		std::cout << "Incoming MIDI data is now written to standard out." << std::endl;
+		std::cout << "Incoming MIDI data is no longer relayed to LEDs." << std::endl;
+		std::cout << "Last MIDI message received was: ";
+		dumpMidiData(lastMidiMessageReceived);
+	}
+}
+
 void toggleDynamicColors()
 {
 	if (dynamic_colors)
@@ -537,18 +607,18 @@ void displayCustomColorValues()
 	std::cout << "All channels are set to default color configuration." << std::endl;
 }
 
-void toggleVicTsingErrorCorrector()
+void toggleCH345ErrorCorrector()
 {
-	if (vicTsingErrorCorrector)
+	if (CH345ErrorCorrector)
 	{
-		vicTsingErrorCorrector = false;
-		std::cout << "VicTsing Error Corrector disabled." << std::endl;
+		CH345ErrorCorrector = false;
+		std::cout << "CH345 Error Corrector disabled." << std::endl;
 		std::cout << "Note messages which correspond to recognized control change messages are " << std::endl << "no longer interpeted as control change messages." << std::endl;
 	}
 	else
 	{
-		vicTsingErrorCorrector = true;
-		std::cout << "VicTsing Error Corrector enabled." << std::endl;
+		CH345ErrorCorrector = true;
+		std::cout << "CH345 Error Corrector enabled." << std::endl;
 		std::cout << "Note messages which correspond to recognized control change messages are " << std::endl << "now interpeted as control change messages." << std::endl;
 	}	
 }
@@ -581,7 +651,9 @@ void signal_handler(int signal)
 void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
-	commands.push_back(new Command("Enable/Disable VicTsing USB/MIDI Adapter Error Corrector", &toggleVicTsingErrorCorrector));
+	commands.push_back(new Command("Dump Data Structures", &dumpDataStructures));
+	commands.push_back(new Command("Enable/Disable MIDI data dump", &toggleDataDump));
+	commands.push_back(new Command("Enable/Disable CH345 USB/MIDI Adapter Error Corrector", &toggleCH345ErrorCorrector));
 	commands.push_back(new Command("Enable/Disable Custom Color Messages", &toggleDynamicColors));
 	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
 	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
@@ -801,6 +873,8 @@ void init()
 	
 	// ignore sysex, timing, or active sensing messages.
 	midiin->ignoreTypes( true, true, true );
+
+	lastMidiMessageReceived = new std::vector<unsigned char>();
 
 	fprintf(stdout, "\nReady to interpret MIDI input data through the RtMidi Input Client.\n");
 }
