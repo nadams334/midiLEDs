@@ -135,10 +135,14 @@ const int dimnessFactor = 8; // divide MIDI velocity by this amount when calcula
 const int numChannels = 16;
 const int numNotes = 128;
 
+bool vicTsingErrorCorrector = true;
+
 bool dynamic_colors = false;
 int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
+
+const int MAX_VELOCITY = 127;
 
 int mostRecentColorMessageChannel = -1;
 
@@ -320,13 +324,88 @@ void setNote(int channel, int note, int velocity)
 	
 }
 
-void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *message, void *userData)
+void handleSostenutoMessage(bool enable, int channel)
+{
+	if (enable)
+	{
+		// need to save all currently active LEDs
+		for (int i = 0; i < numNotes; i++)
+		{
+			unsigned int size = activeMessagesForNote[i].size();
+			for (unsigned int j = 0; j < size; j++)
+			{
+				LED_MESSAGE* ledMessage = activeMessagesForNote[i][j];
+
+				int messageChannel = ledMessage->getChannel();
+				if (messageChannel == channel)
+				{
+					activeMessagesForNote[i].push_back(ledMessage);
+					sostenutoMessages[channel].push_back(ledMessage);
+				}
+			}
+		}
+	}
+	else
+	{
+		// need to clear all saved LEDs from previous on message
+		for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
+		{
+			LED_MESSAGE* ledMessage = sostenutoMessages[channel][i];
+			setNote(ledMessage->getChannel(), noteboard[ledMessage->GET_LED_NUM()], 0); // send note off message
+		}
+		sostenutoMessages[channel].clear();
+	}
+}
+
+void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message, void* userData)
 {
 	int code = (int) message->at(0);
 
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
 	{
 		int channel = code - noteOnCodeMin;
+
+		// Error correcting
+		if (vicTsingErrorCorrector && !channelNeedsUpdateMessage[channel])
+		{
+			if (message->at(1) == cc_sostenuto && message->at(2) == MAX_VELOCITY)
+			{
+				// Most likely this is a glitch with the VicTsing USB/MIDI adapter
+				// This should be treated as a sostuento instead of a max velocity F#5
+				// Unfortunately this will disable the ability to correctly interperet an actual max velocity F#5
+			
+				handleSostenutoMessage(true, channel);
+				return;
+			}
+			else if (message->at(1) == cc_red)
+			{
+				if (dynamic_colors)
+				{
+					red[channel] = message->at(2);
+					mostRecentColorMessageChannel = channel;
+				}
+				return;
+			}
+			else if (message->at(1) == cc_green)
+			{
+				if (dynamic_colors)
+				{
+					green[channel] = message->at(2);
+					mostRecentColorMessageChannel = channel;
+				}
+				return;
+			}
+			else if (message->at(1) == cc_blue)
+			{
+				if (dynamic_colors)
+				{
+					blue[channel] = message->at(2);
+					mostRecentColorMessageChannel = channel;
+				}
+				return;
+			}
+		}
+
 		setNote(channel, message->at(1), message->at(2));
 	}	
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
@@ -342,50 +421,7 @@ void onMidiMessageReceived(double deltatime, std::vector< unsigned char > *messa
 
 		if (ccCode == cc_sostenuto)
 		{
-			if (value > 0) // turning on
-			{
-				// need to save all currently active LEDs
-				for (int i = 0; i < numNotes; i++)
-				{
-					unsigned int size = activeMessagesForNote[i].size();
-					for (unsigned int j = 0; j < size; j++)
-					{
-						LED_MESSAGE* ledMessage = activeMessagesForNote[i][j];
-
-						int messageChannel = ledMessage->getChannel();
-						if (messageChannel == channel)
-						{
-							activeMessagesForNote[i].push_back(ledMessage);
-							sostenutoMessages[channel].push_back(ledMessage);
-						}
-					}
-				}
-				/*
-				std::cout << "Sostenuto messages after on: " << std::endl;
-				for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
-				{
-					LED_MESSAGE* message = sostenutoMessages[channel][i];
-					std::cout << "Message #" << i << ": " << std::endl;
-					std::cout << "Channel: " << message->getChannel() << std::endl;
-					std::cout << "LED_NUM: " << message->GET_LED_NUM() << std::endl;
-					std::cout << "Brightness: " << message->getBrightness() << std::endl;
-					std::cout << "Red: " << message->getRed() << std::endl;
-					std::cout << "Green: " << message->getGreen() << std::endl;
-					std::cout << "Blue: " << message->getBlue() << std::endl;
-					std::cout << std::endl;
-				}
-				*/
-			}
-			else // turning off
-			{
-				// need to clear all saved LEDs from previous on message
-				for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
-				{
-					LED_MESSAGE* ledMessage = sostenutoMessages[channel][i];
-					setNote(ledMessage->getChannel(), noteboard[ledMessage->GET_LED_NUM()], 0); // send note off message
-				}
-				sostenutoMessages[channel].clear();
-			}
+			handleSostenutoMessage(value > 0, channel);
 		}
 		else if (ccCode == cc_update_channel)
 		{
@@ -459,14 +495,14 @@ void toggleDynamicColors()
 	if (dynamic_colors)
 	{
 		dynamic_colors = false;
-		std::cout << "Color parameters disabled." << std::endl;
+		std::cout << "Color messages disabled." << std::endl;
 		resetColors();
 	}
 	else
 	{
 		dynamic_colors = true;
 		mostRecentColorMessageChannel = -1;
-		std::cout << "Color parameters enabled." << std::endl;
+		std::cout << "Color messages enabled." << std::endl;
 	}
 }
 
@@ -486,7 +522,7 @@ void displayCustomColorValues()
 {
 	if (!dynamic_colors)
 	{
-		std::cout << "Color parameters are disabled." << std::endl;
+		std::cout << "Color messages are disabled." << std::endl;
 	}
 	else if (mostRecentColorMessageChannel < 0)
 	{
@@ -499,6 +535,22 @@ void displayCustomColorValues()
 	}
 
 	std::cout << "All channels are set to default color configuration." << std::endl;
+}
+
+void toggleVicTsingErrorCorrector()
+{
+	if (vicTsingErrorCorrector)
+	{
+		vicTsingErrorCorrector = false;
+		std::cout << "VicTsing Error Corrector disabled." << std::endl;
+		std::cout << "Note messages which correspond to recognized control change messages are " << std::endl << "no longer interpeted as control change messages." << std::endl;
+	}
+	else
+	{
+		vicTsingErrorCorrector = true;
+		std::cout << "VicTsing Error Corrector enabled." << std::endl;
+		std::cout << "Note messages which correspond to recognized control change messages are " << std::endl << "now interpeted as control change messages." << std::endl;
+	}	
 }
 
 void end(int status)
@@ -529,9 +581,10 @@ void signal_handler(int signal)
 void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
-	commands.push_back(new Command("Enable/Disable Color Parameters", &toggleDynamicColors));
+	commands.push_back(new Command("Enable/Disable VicTsing USB/MIDI Adapter Error Corrector", &toggleVicTsingErrorCorrector));
+	commands.push_back(new Command("Enable/Disable Custom Color Messages", &toggleDynamicColors));
 	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
-	commands.push_back(new Command("Display Color Change Message Info", &displayColorMessageCodes));
+	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
 }
 
 void init()
