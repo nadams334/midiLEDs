@@ -422,7 +422,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 				// This should be treated as a sostuento instead of an F#4
 				// Unfortunately this will hinder the ability to correctly interperet an actual F#4
 			
-				handleSostenutoMessage(message->at(2) > 0, channel);
+				//handleSostenutoMessage(message->at(2) > 0, channel);
 
 				return;
 			}
@@ -430,8 +430,14 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 			{
 				if (dynamic_colors)
 				{
-					red[channel] = message->at(2);
 					mostRecentColorMessageChannel = channel;
+
+					red[channel] = message->at(2);
+
+					if (redConfig[channel] < 0)
+					{
+						red[channel] = 0 - std::abs(red[channel]); // force negative
+					}
 				}
 
 				return;
@@ -440,8 +446,14 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 			{
 				if (dynamic_colors)
 				{
-					green[channel] = message->at(2);
 					mostRecentColorMessageChannel = channel;
+
+					green[channel] = message->at(2);
+
+					if (greenConfig[channel] < 0)
+					{
+						green[channel] = 0 - std::abs(green[channel]); // force negative
+					}
 				}
 
 				return;
@@ -450,8 +462,14 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 			{
 				if (dynamic_colors)
 				{
-					blue[channel] = message->at(2);
 					mostRecentColorMessageChannel = channel;
+
+					blue[channel] = message->at(2);
+
+					if (blueConfig[channel] < 0)
+					{
+						blue[channel] = 0 - std::abs(blue[channel]); // force negative
+					}
 				}
 
 				return;
@@ -488,13 +506,34 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		else if (dynamic_colors)
 		{
 			if (ccCode == cc_red)
+			{
 				red[channel] = value;
 
+				if (redConfig[channel] < 0)
+				{
+					red[channel] = 0 - std::abs(red[channel]); // force negative
+				}
+			}
+
 			else if (ccCode == cc_green)
+			{
 				green[channel] = value;
 
+				if (greenConfig[channel] < 0)
+				{
+					green[channel] = 0 - std::abs(green[channel]); // force negative
+				}
+			}
+
 			else if (ccCode == cc_blue)
+			{
 				blue[channel] = value;
+
+				if (blueConfig[channel] < 0)
+				{
+					blue[channel] = 0 - std::abs(blue[channel]); // force negative
+				}
+			}
 
 			mostRecentColorMessageChannel = channel;
 		}
