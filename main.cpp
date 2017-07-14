@@ -144,6 +144,7 @@ int cc_green = 17;
 int cc_blue = 18;
 
 const int MAX_VELOCITY = 127;
+const int MAX_LED_VALUE = 255;
 
 int mostRecentColorMessageChannel = -1;
 std::vector<unsigned char>* lastMidiMessageReceived;
@@ -160,6 +161,7 @@ bool* channelNeedsUpdateMessage;
 int cc_update_channel = 30;
 int cc_update_all = 31;
 
+bool sostenutoActive = false;
 int cc_sostenuto = 66;
 
 std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
@@ -271,6 +273,10 @@ void setNote(int channel, int note, int velocity)
 	if (b < 0)
 		b = ( rand() % std::abs(b) ) + 1; // random number between 1 and inputted value
 	
+	// modify color intensities based on note velocity
+	r *= ceiling(velocity, ceiling(MAX_VELOCITY, 2));
+	g *= ceiling(velocity, ceiling(MAX_VELOCITY, 2));
+	b *= ceiling(velocity, ceiling(MAX_VELOCITY, 2));
 	
 	LED_MESSAGE* message = new LED_MESSAGE(channel, key, brightness, r, g, b);
 	
@@ -332,6 +338,14 @@ void handleSostenutoMessage(bool enable, int channel)
 {
 	if (enable)
 	{
+		if (sostenutoActive)
+		{
+			//std::cerr << "WARNING: Received sostenuto ON request, but sostenuto is already active. Ignoring request." << std::endl;
+			return;
+		}
+
+		sostenutoActive = true;
+
 		// need to save all currently active LEDs
 		for (int i = 0; i < numNotes; i++)
 		{
@@ -351,6 +365,14 @@ void handleSostenutoMessage(bool enable, int channel)
 	}
 	else
 	{
+		if (!sostenutoActive)
+		{
+			//std::cerr << "WARNING: Received sostenuto OFF request, but sostenuto is not currently active. Ignoring request." << std::endl;
+			return;
+		}
+
+		sostenutoActive = false;
+
 		// need to clear all saved LEDs from previous on message
 		for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
 		{
@@ -374,6 +396,8 @@ void dumpDataStructures()
 
 	std::cout << std::endl;
 
+	std::cout << "Sostenuto active: " << sostenutoActive << std::endl;
+
 	for (int channel = 0; channel < numChannels; channel++)
 	{
 		for (unsigned int messageIndex = 0; messageIndex < sostenutoMessages[channel].size(); messageIndex++)
@@ -384,7 +408,7 @@ void dumpDataStructures()
 	}
 }
 
-void dumpMidiData(std::vector<unsigned char>* message)
+void dumpMidiMessage(std::vector<unsigned char>* message)
 {
 	for (unsigned int i = 0; i < message->size(); i++)
 	{
@@ -403,7 +427,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 
 	if (dataDump)
 	{
-		dumpMidiData(message);
+		dumpMidiMessage(message);
 	}
 
 	int code = (int) message->at(0);
@@ -413,10 +437,11 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		int channel = code - noteOnCodeMin;
 
 		// Error correcting
-		if (CH345ErrorCorrector && !channelNeedsUpdateMessage[channel])
+		if (CH345ErrorCorrector)
 		{
-			if ((message->at(1) == cc_sostenuto) && 
-				((message->at(2) == MAX_VELOCITY)))
+			if (!channelNeedsUpdateMessage[channel] 
+				&& message->at(1) == cc_sostenuto
+				&& message->at(2) == MAX_VELOCITY)
 			{
 				// Most likely this is a glitch with the CH345 USB/MIDI adapter
 				// This should be treated as a sostuento instead of an F#4
@@ -540,13 +565,8 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 	}
 }
 
-void clear_LEDs()
+void clearDataStructures()
 {
-	for (int i = 0; i < numLEDs; i++)
-	{
-		set_LED(new LED_MESSAGE(0, i, 0, 0, 0, 0));
-	}
-
 	for (int i = 0; i < numNotes; i++)
 	{
 		activeMessagesForNote[i].clear();
@@ -556,6 +576,18 @@ void clear_LEDs()
 	{
 		sostenutoMessages[i].clear();
 	}
+
+	sostenutoActive = false;
+}
+
+void clear_LEDs()
+{
+	for (int i = 0; i < numLEDs; i++)
+	{
+		set_LED(new LED_MESSAGE(0, i, 0, 0, 0, 0));
+	}
+
+	clearDataStructures();
 
 	write_LED_data();
 
@@ -595,7 +627,7 @@ void toggleDataDump()
 		std::cout << "Incoming MIDI data is now written to standard out." << std::endl;
 		std::cout << "Incoming MIDI data is no longer relayed to LEDs." << std::endl;
 		std::cout << "Last MIDI message received was: ";
-		dumpMidiData(lastMidiMessageReceived);
+		dumpMidiMessage(lastMidiMessageReceived);
 	}
 }
 
@@ -678,13 +710,121 @@ void end()
 
 void signal_handler(int signal)
 {
-	fprintf(stdout, "\nReceived signal %d. Send EOF (Ctrl+D) to quit.\n", signal);
+	fprintf(stdout, "\n\nReceived signal %d. Send EOF (Ctrl+D) to quit.\n", signal);
 	std::cout << "Enter (code) to issue command:" << std::endl;
 	for (unsigned int i = 0; i < commands.size(); i++)
 	{
 		fprintf(stdout, "(%d) %s\n", i+1, commands[i]->getName().c_str());
 	}
 	std::cout << std::endl; 
+}
+
+bool colorsLoaded = false;
+
+void loadChannelColorConfig()
+{
+	redConfig = new int[numChannels];
+	greenConfig = new int[numChannels];
+	blueConfig = new int[numChannels];
+
+	if (!colorsLoaded)
+	{
+		red = new int[numChannels];
+		green = new int[numChannels];
+		blue = new int[numChannels];
+	}
+
+	channelNeedsUpdateMessage = new bool[numChannels];
+	
+	int chnl = 0;
+	int r = 0;
+	int g = 0;
+	int b = 0;
+	
+	for (int i = 0; i < numChannels; i++)
+	{
+		redConfig[i] = 32;
+		greenConfig[i] = 32;
+		blueConfig[i] = 32;
+
+		if (!colorsLoaded || !dynamic_colors)
+		{
+			red[i] = redConfig[i];
+			green[i] = greenConfig[i];
+			blue[i] = blueConfig[i];
+		}
+
+		channelNeedsUpdateMessage[i] = false;
+	}
+
+	std::ifstream colorMappingFile;
+	colorMappingFile.open(colorMappingFilename);
+	
+	if (colorMappingFile.is_open())
+	{
+		while ( !colorMappingFile.eof() )
+		{
+			// Static channel colors
+
+			colorMappingFile >> chnl;
+			colorMappingFile >> r;
+			colorMappingFile >> g;
+			colorMappingFile >> b;
+
+			bool chnlNeedsUpdateMessage = false;
+
+			if (chnl < 0)
+			{
+				chnl = 0 - chnl; // convert to positive equivalent
+				chnlNeedsUpdateMessage = true;
+			}
+
+			if (chnl < 1 || chnl > 16)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			if (r < -MAX_VELOCITY || r > MAX_VELOCITY)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Red must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << r << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			if (g < -MAX_VELOCITY || g > MAX_VELOCITY)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Green must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << g << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			if (b < -MAX_VELOCITY || b > MAX_VELOCITY)
+			{
+				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << b << ").\nExiting..." << std::endl;
+				end(1);
+			}	
+			redConfig[chnl-1] = r;
+			greenConfig[chnl-1] = g;
+			blueConfig[chnl-1] = b;
+
+			if (!colorsLoaded || !dynamic_colors)
+			{
+				red[chnl-1] = redConfig[chnl-1];
+				green[chnl-1] = greenConfig[chnl-1];
+				blue[chnl-1] = blueConfig[chnl-1];
+			}
+			
+			if (chnlNeedsUpdateMessage)
+				channelNeedsUpdateMessage[chnl-1] = true;
+		}
+		colorMappingFile.close();
+
+		if (colorsLoaded)
+			std::cout << "Successfully loaded MIDI channel color mapping configuration file: " << colorMappingFilename << std::endl;
+	}
+	
+	else
+	{
+		std::cerr << "Could not open MIDI channel color mapping configuration file: " << colorMappingFilename << "\nUsing all white." << std::endl;
+	}
+
+	colorsLoaded = true;
 }
 
 void createCommandList()
@@ -696,6 +836,7 @@ void createCommandList()
 	commands.push_back(new Command("Enable/Disable Custom Color Messages", &toggleDynamicColors));
 	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
 	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
+	commands.push_back(new Command("Reload MIDI Channel Color Config", &loadChannelColorConfig));
 }
 
 void init()
@@ -763,94 +904,9 @@ void init()
 	}
 	*/
 	
-	// MIDI channel - LED color mapping
-
-	redConfig = new int[numChannels];
-	greenConfig = new int[numChannels];
-	blueConfig = new int[numChannels];
-
-	red = new int[numChannels];
-	green = new int[numChannels];
-	blue = new int[numChannels];
-	channelNeedsUpdateMessage = new bool[numChannels];
 	
-	std::ifstream colorMappingFile;
-	colorMappingFile.open(colorMappingFilename);
-	
-	int chnl = 0;
-	int r = 0;
-	int g = 0;
-	int b = 0;
-	
-	for (int i = 0; i < numChannels; i++)
-	{
-		redConfig[i] = 1;
-		greenConfig[i] = 1;
-		blueConfig[i] = 1;
-		red[i] = redConfig[i];
-		green[i] = greenConfig[i];
-		blue[i] = blueConfig[i];
-		channelNeedsUpdateMessage[i] = false;
-	}
-	
-	if (colorMappingFile.is_open())
-	{
-		while ( !colorMappingFile.eof() )
-		{
-			// Static channel colors
+	loadChannelColorConfig();
 
-			colorMappingFile >> chnl;
-			colorMappingFile >> r;
-			colorMappingFile >> g;
-			colorMappingFile >> b;
-
-			bool chnlNeedsUpdateMessage = false;
-
-			if (chnl < 0)
-			{
-				chnl = 0 - chnl; // convert to positive equivalent
-				chnlNeedsUpdateMessage = true;
-			}
-
-			if (chnl < 1 || chnl > 16)
-			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
-				end(1);
-			}	
-			if (r < -255 || r > 255)
-			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Red must be between -255 and 255 (was " << r << ").\nExiting..." << std::endl;
-				end(1);
-			}	
-			if (g < -255 || g > 255)
-			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Green must be between -255 and 255 (was " << g << ").\nExiting..." << std::endl;
-				end(1);
-			}	
-			if (b < -255 || b > 255)
-			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between -255 and 255 (was " << b << ").\nExiting..." << std::endl;
-				end(1);
-			}	
-			redConfig[chnl-1] = r;
-			greenConfig[chnl-1] = g;
-			blueConfig[chnl-1] = b;
-
-			red[chnl-1] = redConfig[chnl-1];
-			green[chnl-1] = greenConfig[chnl-1];
-			blue[chnl-1] = blueConfig[chnl-1];
-			
-			if (chnlNeedsUpdateMessage)
-				channelNeedsUpdateMessage[chnl-1] = true;
-		}
-		colorMappingFile.close();
-	}
-	
-	else
-	{
-		std::cerr << "Could not open MIDI-LED color mapping configuration file: " << colorMappingFilename << "\nUsing all white." << std::endl;
-	}
-	
 	
 	// Initialize APA102 LED strip data buffer
 	
@@ -915,7 +971,7 @@ void init()
 
 	lastMidiMessageReceived = new std::vector<unsigned char>();
 
-	fprintf(stdout, "\nReady to interpret MIDI input data through the RtMidi Input Client.\n");
+	fprintf(stdout, "\nReady to interpret MIDI input data through the RtMidi Input Client.\n\n");
 }
 
 void loop()
