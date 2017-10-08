@@ -637,7 +637,6 @@ void toggleDynamicColors()
 	{
 		dynamic_colors = false;
 		std::cout << "Color messages disabled." << std::endl;
-		resetColors();
 	}
 	else
 	{
