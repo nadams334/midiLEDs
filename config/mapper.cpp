@@ -11,7 +11,6 @@ using namespace std;
 
 // Strip sizing
 const int LEDsPerOctave = 24; // how many LEDs to reach from one C to the next
-const int numLEDs = 288;
 
 // Strip placement
 const int naturalOffset = 134; // what is the number of the LED corresponding to the high C
@@ -38,6 +37,8 @@ const int numFullOctaves = 5; // Number of C->B octaves
 const int numKeysBeforeFirstC = 0; // How many keys before the lowest C on your piano (eg. G = 5: B, Bb, A, Ab, and G)
 const int numKeysAfterLastB = 1; // How many keys go past the highest B on your piano (eg. D = 3: C, C#, and D)
 
+const int lowestNoteOnPiano = (firstOctave * 12) - numKeysBeforeFirstC;
+const int highestNoteOnPiano = ((firstOctave + numFullOctaves) * 12) + numKeysAfterLastB - 1;
 
 
 // Mapping
@@ -49,7 +50,17 @@ int* noteMapping;
 int main()
 {	
 	noteMapping = new int[numMidiNotes];
+	
+	ofstream mappingFile;
+	mappingFile.open("noteMapping.cfg");
+	
 
+	// List the loewst and highest notes on this piano
+
+	mappingFile << lowestNoteOnPiano << endl;
+	mappingFile << highestNoteOnPiano << endl;
+		
+	
 	// Initialize all notes to their appropriate indicator LEDs
 
 	for (int i = 0; i < numMidiNotes; i++)
@@ -99,7 +110,7 @@ int main()
 		}
 
 		noteMapping[i] = indicator;
-	}
+	}	
 
 
 	// Map all notes the piano has keys for
@@ -159,9 +170,6 @@ int main()
 
 
 	// write mapping to file
-	
-	ofstream mappingFile;
-	mappingFile.open("noteMapping.cfg");
 
 	for (int i = 0; i < numMidiNotes; i++) 
 	{

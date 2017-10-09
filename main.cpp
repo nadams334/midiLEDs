@@ -108,6 +108,7 @@ const char* noteMappingFilename = "config/noteMapping.cfg";
 const char* colorMappingFilename = "config/colorMapping.cfg";
 
 
+// Midi Messages
 const unsigned char noteOnCodeMin = (unsigned char)0x90;
 const unsigned char noteOnCodeMax = (unsigned char)0x9F;
 const unsigned char noteOffCodeMin = (unsigned char)0x80;
@@ -121,8 +122,14 @@ const long UPDATE_COOLDOWN_MICROSECONDS = 50;
 std::chrono::high_resolution_clock::time_point ticks;
 
 
+// Keyboard config
+int lowestNoteOnPiano;
+int highestNoteOnPiano;
 int* keyboard; // mapping from note number to LED number
 int* noteboard; // reverse mapping
+
+
+// LED counts
 char* LEDdata; // byte buffer to be sent to APA102 LED strip
 const int numLEDs = 288;
 const int bytesPerLED = 4;
@@ -138,7 +145,7 @@ const int numNotes = 128;
 bool CH345ErrorCorrector = true;
 bool dataDump = false;
 
-bool dynamic_colors = false;
+bool dynamic_colors = true;
 int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
@@ -253,9 +260,30 @@ const int endFrameSize = ceiling(numLEDs/2, 8);
 
 void setNote(int channel, int note, int velocity)
 {
-	int key = keyboard[note];
+	if (note < lowestNoteOnPiano)
+	{
+		if (channel % 2 == 0)
+		{
+			note = 0; // C0, first natural note, should be set to the bottom left indicator
+		}
+		else
+		{
+			note = 1; // C#0, first accidental note, should be set to the top left indicator
+		}
+	}
+	else if (note > highestNoteOnPiano)
+	{
+		if (channel % 2 == 0)
+		{
+			note = 127; // G10, last natural note, should be set to bottom right indicator
+		}
+		else
+		{
+			note = 126; // F#10, last accidental note, should be set to top right indicator
+		}
+	}
 
-	if (key < 0 ) return; // note not on piano
+	int key = keyboard[note];
 	
 	int r = red[channel];
 	int g = green[channel];
@@ -874,6 +902,9 @@ void init()
 	
 	if (noteMappingFile.is_open())
 	{
+		if ( !noteMappingFile.eof() ) noteMappingFile >> lowestNoteOnPiano;
+		if ( !noteMappingFile.eof() ) noteMappingFile >> highestNoteOnPiano;
+
 		while ( !noteMappingFile.eof() )
 		{
 			noteMappingFile >> key;
@@ -881,6 +912,7 @@ void init()
 			keyboard[key] = LED;
 			noteboard[LED] = key;
 		}
+
 		noteMappingFile.close();
 	}
 	
