@@ -168,11 +168,14 @@ bool* channelNeedsUpdateMessage;
 int cc_update_channel = 30;
 int cc_update_all = 31;
 
+bool damperActive = false;
+int cc_damper = 64;
 bool sostenutoActive = false;
 int cc_sostenuto = 66;
 
 std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
 std::vector<LED_MESSAGE*> sostenutoMessages[numChannels];
+std::vector<LED_MESSAGE*> damperMessages[numChannels];
 std::vector<LED_MESSAGE*> pending_LED_messages[numChannels];
 
 std::vector<Command*> commands;
@@ -312,6 +315,11 @@ void setNote(int channel, int note, int velocity)
 	{
 		// indicate that this channel is the most recent channel to turn this note on
 		activeMessagesForNote[note].push_back(message);
+		if (damperActive)
+		{
+			activeMessagesForNote[note].push_back(message);
+			damperMessages[channel].push_back(message);
+		}
 	}
 	
 	else if (brightness == 0) // turning note off
@@ -360,6 +368,55 @@ void setNote(int channel, int note, int velocity)
 		update(channel);
 	}
 	
+}
+
+void handleDamperMessage(bool enable, int channel)
+{
+	if (enable)
+	{
+		if (damperActive)
+		{
+			//std::cerr << "WARNING: Received damper ON request, but damper is already active. Ignoring request." << std::endl;
+			return;
+		}
+
+		damperActive = true;
+
+		// need to save all currently active LEDs
+		for (int i = 0; i < numNotes; i++)
+		{
+			unsigned int size = activeMessagesForNote[i].size();
+			for (unsigned int j = 0; j < size; j++)
+			{
+				LED_MESSAGE* ledMessage = activeMessagesForNote[i][j];
+
+				int messageChannel = ledMessage->getChannel();
+				if (messageChannel == channel)
+				{
+					activeMessagesForNote[i].push_back(ledMessage);
+					damperMessages[channel].push_back(ledMessage);
+				}
+			}
+		}
+	}
+	else
+	{
+		if (!damperActive)
+		{
+			//std::cerr << "WARNING: Received damper OFF request, but damper is not currently active. Ignoring request." << std::endl;
+			return;
+		}
+
+		damperActive = false;
+
+		// need to clear all saved LEDs from previous on message
+		for (unsigned int i = 0; i < damperMessages[channel].size(); i++)
+		{
+			LED_MESSAGE* ledMessage = damperMessages[channel][i];
+			setNote(ledMessage->getChannel(), noteboard[ledMessage->GET_LED_NUM()], 0); // send note off message
+		}
+		damperMessages[channel].clear();
+	}
 }
 
 void handleSostenutoMessage(bool enable, int channel)
@@ -434,6 +491,19 @@ void dumpDataStructures()
 			fprintf(stdout, "sostenutoMessages[%d][%d]: Channel=%d, LED=%d, Brightness=%d, RGB=%03d.%03d.%03d\n", channel, messageIndex, message->getChannel(), message->GET_LED_NUM(), message->getBrightness(), message->getRed(), message->getGreen(), message->getBlue());
 		}
 	}
+
+	std::cout << std::endl;
+
+	std::cout << "Damper active: " << damperActive << std::endl;
+
+	for (int channel = 0; channel < numChannels; channel++)
+	{
+		for (unsigned int messageIndex = 0; messageIndex < damperMessages[channel].size(); messageIndex++)
+		{
+			LED_MESSAGE* message = damperMessages[channel][messageIndex];
+			fprintf(stdout, "damperMessages[%d][%d]: Channel=%d, LED=%d, Brightness=%d, RGB=%03d.%03d.%03d\n", channel, messageIndex, message->getChannel(), message->GET_LED_NUM(), message->getBrightness(), message->getRed(), message->getGreen(), message->getBlue());
+		}
+	}
 }
 
 void dumpMidiMessage(std::vector<unsigned char>* message)
@@ -476,6 +546,18 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 				// Unfortunately this will hinder the ability to correctly interperet an actual F#4
 			
 				//handleSostenutoMessage(message->at(2) > 0, channel);
+
+				return;
+			}
+			else if (!channelNeedsUpdateMessage[channel] 
+				&& message->at(1) == cc_damper
+				&& message->at(2) == MAX_VELOCITY)
+			{
+				// Most likely this is a glitch with the CH345 USB/MIDI adapter
+				// This should be treated as a damper instead of an E4
+				// Unfortunately this will hinder the ability to correctly interperet an actual E4
+			
+				//handleDamperMessage(message->at(2) > 0, channel);
 
 				return;
 			}
@@ -545,6 +627,10 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		if (ccCode == cc_sostenuto)
 		{
 			handleSostenutoMessage(value > 0, channel);
+		}
+		else if (ccCode == cc_damper)
+		{
+			handleDamperMessage(value > 0, channel);
 		}
 		else if (ccCode == cc_update_channel)
 		{
