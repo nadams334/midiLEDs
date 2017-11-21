@@ -692,6 +692,13 @@ void clearDataStructures()
 	}
 
 	sostenutoActive = false;
+
+	for(int i = 0; i < numChannels; i++)
+	{
+		damperMessages[i].clear();
+	}
+
+	damperActive = false;
 }
 
 void clear_LEDs()
