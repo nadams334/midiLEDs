@@ -103,6 +103,46 @@ public:
 	
 };
 
+class DynamicChordScaleIntegrator
+{
+	
+private:
+	
+	int readChnl;
+	int writeChnl;
+	
+	
+public:
+	
+	DynamicChordScaleIntegrator(int readChannel, int writeChannel)
+	{
+		readChnl = readChannel;
+		writeChnl = writeChannel;
+		
+	}
+	
+	int getReadChannel()
+	{
+		return readChnl;
+	}
+
+	int getWriteChannel()
+	{
+		return writeChnl;
+	}
+
+	void setReadChannel(int readChannel)
+	{
+		readChnl = readChannel;
+	}
+
+	void setWriteChannel(int writeChannel)
+	{
+		writeChnl = writeChannel;
+	}
+	
+};
+
 
 const char* noteMappingFilename = "config/noteMapping.cfg";
 const char* colorMappingFilename = "config/colorMapping.cfg";
@@ -149,6 +189,12 @@ bool dynamic_colors = true;
 int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
+
+bool dynamicChordScaleIntegration = false;
+DynamicChordScaleIntegrator* dcsi;
+
+const int DCSI_DEFAULT_READ_CHANNEL = 1;
+const int DCSI_DEFAULT_WRITE_CHANNEL = 10;
 
 const int MAX_VELOCITY = 127;
 const int MAX_LED_VALUE = 255;
@@ -724,6 +770,8 @@ void resetColors()
 		blue[channel] = blueConfig[channel];
 	}
 
+	mostRecentColorMessageChannel = -1;
+
 	std::cout << "All channels reset to default color configuration." << std::endl;
 }
 
@@ -762,8 +810,23 @@ void toggleDynamicColors()
 	else
 	{
 		dynamic_colors = true;
-		mostRecentColorMessageChannel = -1;
 		std::cout << "Color messages enabled." << std::endl;
+	}
+}
+
+void toggleDynamicChordScaleIntegration()
+{
+	if (dynamicChordScaleIntegration)
+	{
+		dynamicChordScaleIntegration = false;
+		std::cout << "Dynamic Chord-Scale Integration disabled." << std::endl;
+	}
+	else
+	{
+		dynamicChordScaleIntegration = true;
+		std::cout << "Dynamic Chord-Scale Integration enabled." << std::endl;
+		std::cout << "Read Channel is set to Channel #" << dcsi->getReadChannel()+1 << std::endl;
+		std::cout << "Write Channel is set to Channel #" << dcsi->getWriteChannel()+1 << std::endl;
 	}
 }
 
@@ -781,21 +844,25 @@ void displayColorValues(int channel)
 
 void displayCustomColorValues()
 {
-	if (!dynamic_colors)
+	if (dynamic_colors)
 	{
-		std::cout << "Color messages are disabled." << std::endl;
+		std::cout << "Color messages are currently enabled." << std::endl;
 	}
-	else if (mostRecentColorMessageChannel < 0)
+	else
+	{
+		std::cout << "Color messages are currently disabled." << std::endl;
+	}
+
+	if (mostRecentColorMessageChannel < 0)
 	{
 		std::cout << "No color messages have been received yet." << std::endl;
+		std::cout << "All channels are set to default color configuration." << std::endl;
 	}
 	else
 	{
 		std::cout << "Last color message received was on channel " << mostRecentColorMessageChannel+1 << "." << std::endl;
 		return displayColorValues(mostRecentColorMessageChannel);
 	}
-
-	std::cout << "All channels are set to default color configuration." << std::endl;
 }
 
 void toggleCH345ErrorCorrector()
@@ -834,7 +901,16 @@ void signal_handler(int signal)
 	std::cout << "Enter (code) to issue command:" << std::endl;
 	for (unsigned int i = 0; i < commands.size(); i++)
 	{
-		fprintf(stdout, "(%d) %s\n", i+1, commands[i]->getName().c_str());
+		char commandChar;
+		if (i < 10) 
+		{
+			commandChar = '0' + i;
+		}
+		else
+		{
+			commandChar = 'A' + i-10;
+		}
+		fprintf(stdout, "(%c) %s\n", commandChar, commands[i]->getName().c_str());
 	}
 	std::cout << std::endl; 
 }
@@ -951,11 +1027,13 @@ void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
 	commands.push_back(new Command("Dump Data Structures", &dumpDataStructures));
-	commands.push_back(new Command("Enable/Disable MIDI data dump", &toggleDataDump));
-	commands.push_back(new Command("Enable/Disable CH345 USB/MIDI Adapter Error Corrector", &toggleCH345ErrorCorrector));
-	commands.push_back(new Command("Enable/Disable Custom Color Messages", &toggleDynamicColors));
+	commands.push_back(new Command("Toggle Dynamic Chord-Scale Integration", &toggleDynamicChordScaleIntegration));
+	commands.push_back(new Command("Toggle MIDI data dump", &toggleDataDump));
+	commands.push_back(new Command("Toggle CH345 USB/MIDI Adapter Error Corrector", &toggleCH345ErrorCorrector));
+	commands.push_back(new Command("Toggle Custom Color Messages", &toggleDynamicColors));
 	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
 	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
+	commands.push_back(new Command("Reset Custom Colors", &resetColors));
 	commands.push_back(new Command("Reload MIDI Channel Color Config", &loadChannelColorConfig));
 }
 
@@ -970,6 +1048,8 @@ void init()
 	srand(time(NULL));
 
 	createCommandList();
+
+	dcsi = new DynamicChordScaleIntegrator(DCSI_DEFAULT_READ_CHANNEL-1,DCSI_DEFAULT_WRITE_CHANNEL-1);
 	
 	
 	// Load config files
@@ -1103,10 +1183,21 @@ void loop()
 	char input;
 	while (std::cin.get(input))
 	{
-		if (input >= '1' && input <= '9')
+		int commandIndex = -1;
+		if (input >= '0' && input <= '9')
 		{
-			// Execute command
-			int commandIndex = input - '1';
+			commandIndex = input - '0';
+		}
+		else if (input >= 'A' && input <= 'Z')
+		{
+			commandIndex = input - 'A' + 10;
+		}
+		else if (input >= 'a' && input <= 'z')
+		{
+			commandIndex = input - 'a' + 10;
+		}
+		if (commandIndex >= 0)
+		{
 			Command* command = commands[commandIndex];
 			funcPtr commandFunctionPointer = command->getFunctionPointer();
 			std::cout << "Executing command: " << command->getName() << std::endl;
