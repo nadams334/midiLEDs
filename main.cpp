@@ -836,7 +836,7 @@ void end()
 
 void signal_handler(int signal)
 {
-	fprintf(stdout, "\n\nReceived signal %d. Send EOF (Ctrl+D) to quit.\n", signal);
+	fprintf(stdout, "\n\nReceived signal %d. Send EOF (Ctrl+D) to quit.\n\n", signal);
 	std::cout << "Enter (code) to issue command:" << std::endl;
 	for (unsigned int i = 0; i < commands.size(); i++)
 	{
