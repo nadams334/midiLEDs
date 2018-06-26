@@ -106,7 +106,7 @@ public:
 
 // Config file loading
 const char* noteMappingFilename = "config/noteMapping.cfg";
-const char* colorMappingFilename = "config/colorMapping.cfg";
+const char* channelMappingFilename = "config/channelMapping.cfg";
 
 
 // Midi Messages
@@ -216,13 +216,14 @@ void write_LED_data()
 
 void update(int channel)
 {
-	bool shouldUpdate = true;
 	/*
+	bool shouldUpdate = true;
+	
 	if (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now()-ticks).count()/1000 < UPDATE_COOLDOWN_MICROSECONDS)
 	{
 		shouldUpdate = false;
 	}
-	*/
+	
 	if (shouldUpdate)
 	{	
 		// set any pending LEDs
@@ -257,6 +258,11 @@ void update(int channel)
 		
 		write_LED_data();
 	}
+	*/
+
+	if (dataDump)	return;
+		
+	write_LED_data();
 }
 
 int ceiling(int dividend, int divisor)
@@ -886,7 +892,7 @@ void loadChannelColorConfig()
 		greenConfig[i] = 32;
 		blueConfig[i] = 32;
 
-		if (!colorsLoaded || !dynamic_colors)
+		if (!colorsLoaded)
 		{
 			red[i] = redConfig[i];
 			green[i] = greenConfig[i];
@@ -896,19 +902,24 @@ void loadChannelColorConfig()
 		channelNeedsUpdateMessage[i] = false;
 	}
 
-	std::ifstream colorMappingFile;
-	colorMappingFile.open(colorMappingFilename);
-	
-	if (colorMappingFile.is_open())
+	if (colorsLoaded && !dynamic_colors)
 	{
-		while ( !colorMappingFile.eof() )
+		resetColors();
+	}
+
+	std::ifstream channelMappingFile;
+	channelMappingFile.open(channelMappingFilename);
+	
+	if (channelMappingFile.is_open())
+	{
+		while ( !channelMappingFile.eof() )
 		{
 			// Static channel colors
 
-			colorMappingFile >> chnl;
-			colorMappingFile >> r;
-			colorMappingFile >> g;
-			colorMappingFile >> b;
+			channelMappingFile >> chnl;
+			channelMappingFile >> r;
+			channelMappingFile >> g;
+			channelMappingFile >> b;
 
 			bool chnlNeedsUpdateMessage = false;
 
@@ -920,22 +931,22 @@ void loadChannelColorConfig()
 
 			if (chnl < 1 || chnl > 16)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << channelMappingFilename << "): Channel must be between 1 and 16 (was " << chnl << ").\nExiting..." << std::endl;
 				end(1);
 			}	
 			if (r < -MAX_VELOCITY || r > MAX_VELOCITY)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Red must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << r << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << channelMappingFilename << "): Red must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << r << ").\nExiting..." << std::endl;
 				end(1);
 			}	
 			if (g < -MAX_VELOCITY || g > MAX_VELOCITY)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Green must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << g << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << channelMappingFilename << "): Green must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << g << ").\nExiting..." << std::endl;
 				end(1);
 			}	
 			if (b < -MAX_VELOCITY || b > MAX_VELOCITY)
 			{
-				std::cerr << "Error in (" << colorMappingFilename << "): Blue must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << b << ").\nExiting..." << std::endl;
+				std::cerr << "Error in (" << channelMappingFilename << "): Blue must be between -" << MAX_VELOCITY << " and " << MAX_VELOCITY << " (was " << b << ").\nExiting..." << std::endl;
 				end(1);
 			}	
 			redConfig[chnl-1] = r;
@@ -952,15 +963,15 @@ void loadChannelColorConfig()
 			if (chnlNeedsUpdateMessage)
 				channelNeedsUpdateMessage[chnl-1] = true;
 		}
-		colorMappingFile.close();
+		channelMappingFile.close();
 
 		if (colorsLoaded)
-			std::cout << "Successfully loaded MIDI channel color mapping configuration file: " << colorMappingFilename << std::endl;
+			std::cout << "Successfully loaded MIDI channel color mapping configuration file: " << channelMappingFilename << std::endl;
 	}
 	
 	else
 	{
-		std::cerr << "Could not open MIDI channel color mapping configuration file: " << colorMappingFilename << "\nUsing all white." << std::endl;
+		std::cerr << "Could not open MIDI channel color mapping configuration file: " << channelMappingFilename << "\nUsing all white." << std::endl;
 	}
 
 	colorsLoaded = true;
