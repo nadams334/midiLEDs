@@ -183,7 +183,11 @@ std::vector<Command*> commands;
 
 
 RtMidiIn* midiin;
+const std::string DEFAULT_RTMIDI_NAME = "midiLEDs";
 
+bool autoConnectALSAPorts = true; // use aconnect to automatically establish ALSA connection on launch
+const std::string DEFAULT_ALSA_INPUT_NAME = "CH345";
+const std::string DEFAULT_ALSA_OUTPUT_NAME = "RtMidi Input Client:" + DEFAULT_RTMIDI_NAME;
 
 
 
@@ -962,6 +966,14 @@ void loadChannelColorConfig()
 	colorsLoaded = true;
 }
 
+void clearALSAConnections()
+{
+	std::string command = "aconnect -x";
+	system(command.c_str());
+
+	std::cout << "All ALSA ports have been disconnected using aconnect." << std::endl;
+}
+
 void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
@@ -973,6 +985,7 @@ void createCommandList()
 	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
 	commands.push_back(new Command("Reset Custom Colors", &resetColors));
 	commands.push_back(new Command("Reload MIDI Channel Color Config", &loadChannelColorConfig));
+	commands.push_back(new Command("Clear ALSA Connections", &clearALSAConnections));
 }
 
 void init()
@@ -1099,7 +1112,7 @@ void init()
 	midiin = new RtMidiIn();
 	
 	// Create a port that other audio software can output MIDI data to
-	midiin->openVirtualPort();
+	midiin->openVirtualPort(DEFAULT_RTMIDI_NAME);
 	
 	// Set our callback function.  This should be done immediately after
 	// opening the port to avoid having incoming messages written to the
@@ -1111,7 +1124,15 @@ void init()
 
 	lastMidiMessageReceived = new std::vector<unsigned char>();
 
-	fprintf(stdout, "\nReady to interpret MIDI input data through the RtMidi Input Client.\n\n");
+	
+	// Connect ALSA Ports
+	if (autoConnectALSAPorts)
+	{
+		std::string command = "aconnect \"" + DEFAULT_ALSA_INPUT_NAME + "\" \"" + DEFAULT_ALSA_OUTPUT_NAME + "\"";
+		system(command.c_str());
+	}
+
+	fprintf(stdout, "\nReady to interpret MIDI input data.\n\n");
 }
 
 void loop()
