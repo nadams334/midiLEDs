@@ -1,6 +1,6 @@
 // midiLEDs
 // Author: Nathan Adams
-// 2016-2017
+// 2016-2018
 
 #include <iostream>
 #include <fstream>
@@ -103,47 +103,8 @@ public:
 	
 };
 
-class DynamicChordScaleIntegrator
-{
-	
-private:
-	
-	int readChnl;
-	int writeChnl;
-	
-	
-public:
-	
-	DynamicChordScaleIntegrator(int readChannel, int writeChannel)
-	{
-		readChnl = readChannel;
-		writeChnl = writeChannel;
-		
-	}
-	
-	int getReadChannel()
-	{
-		return readChnl;
-	}
 
-	int getWriteChannel()
-	{
-		return writeChnl;
-	}
-
-	void setReadChannel(int readChannel)
-	{
-		readChnl = readChannel;
-	}
-
-	void setWriteChannel(int writeChannel)
-	{
-		writeChnl = writeChannel;
-	}
-	
-};
-
-
+// Config file loading
 const char* noteMappingFilename = "config/noteMapping.cfg";
 const char* colorMappingFilename = "config/colorMapping.cfg";
 
@@ -189,12 +150,6 @@ bool dynamic_colors = true;
 int cc_red = 16;
 int cc_green = 17;
 int cc_blue = 18;
-
-bool dynamicChordScaleIntegration = false;
-DynamicChordScaleIntegrator* dcsi;
-
-const int DCSI_DEFAULT_READ_CHANNEL = 1;
-const int DCSI_DEFAULT_WRITE_CHANNEL = 10;
 
 const int MAX_VELOCITY = 127;
 const int MAX_LED_VALUE = 255;
@@ -814,22 +769,6 @@ void toggleDynamicColors()
 	}
 }
 
-void toggleDynamicChordScaleIntegration()
-{
-	if (dynamicChordScaleIntegration)
-	{
-		dynamicChordScaleIntegration = false;
-		std::cout << "Dynamic Chord-Scale Integration disabled." << std::endl;
-	}
-	else
-	{
-		dynamicChordScaleIntegration = true;
-		std::cout << "Dynamic Chord-Scale Integration enabled." << std::endl;
-		std::cout << "Read Channel is set to Channel #" << dcsi->getReadChannel()+1 << std::endl;
-		std::cout << "Write Channel is set to Channel #" << dcsi->getWriteChannel()+1 << std::endl;
-	}
-}
-
 void displayColorValues(int channel)
 {
 	if (channel >= 0 && channel < numChannels)
@@ -1027,7 +966,6 @@ void createCommandList()
 {
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
 	commands.push_back(new Command("Dump Data Structures", &dumpDataStructures));
-	commands.push_back(new Command("Toggle Dynamic Chord-Scale Integration", &toggleDynamicChordScaleIntegration));
 	commands.push_back(new Command("Toggle MIDI data dump", &toggleDataDump));
 	commands.push_back(new Command("Toggle CH345 USB/MIDI Adapter Error Corrector", &toggleCH345ErrorCorrector));
 	commands.push_back(new Command("Toggle Custom Color Messages", &toggleDynamicColors));
@@ -1049,8 +987,6 @@ void init()
 
 	createCommandList();
 
-	dcsi = new DynamicChordScaleIntegrator(DCSI_DEFAULT_READ_CHANNEL-1,DCSI_DEFAULT_WRITE_CHANNEL-1);
-	
 	
 	// Load config files
 	
