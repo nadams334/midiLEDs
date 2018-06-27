@@ -556,6 +556,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 				// This should be treated as a sostuento instead of an F#4
 				// Unfortunately this will hinder the ability to correctly interperet an actual F#4
 			
+				// Actually we will ignore this message because of the possibility of accidentally triggering a sostuento while mashing the F#4 key
 				//handleSostenutoMessage(message->at(2) > 0, channel);
 
 				return;
@@ -568,6 +569,7 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 				// This should be treated as a damper instead of an E4
 				// Unfortunately this will hinder the ability to correctly interperet an actual E4
 			
+				// Actually we will ignore this message because of the possibility of accidentally triggering a damper while mashing the E4 key
 				//handleDamperMessage(message->at(2) > 0, channel);
 
 				return;
