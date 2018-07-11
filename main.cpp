@@ -170,9 +170,9 @@ bool* channelNeedsUpdateMessage;
 int cc_update_channel = 30;
 int cc_update_all = 31;
 
-bool damperActive = false;
+bool* damperActive;
 int cc_damper = 64;
-bool sostenutoActive = false;
+bool* sostenutoActive;
 int cc_sostenuto = 66;
 
 std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
@@ -325,12 +325,26 @@ void setNote(int channel, int note, int velocity)
 	
 	if (brightness > 0) // turning note on
 	{
-		// indicate that this channel is the most recent channel to turn this note on
-		activeMessagesForNote[note].push_back(message);
-		if (damperActive)
+		if (channelIsLowPriority[channel])
 		{
 			activeMessagesForNote[note].push_back(message);
-			damperMessages[channel].push_back(message);
+			if (damperActive[channel])
+			{
+				activeMessagesForNote[note].push_back(message);
+				damperMessages[channel].push_back(message);
+			}
+
+			message = activeMessagesForNote[note].front();
+		}
+
+		else
+		{
+			activeMessagesForNote[note].push_front(message);
+			if (damperActive[channel])
+			{
+				activeMessagesForNote[note].push_front(message);
+				damperMessages[channel].push_back(message);
+			}
 		}
 	}
 	
@@ -352,7 +366,7 @@ void setNote(int channel, int note, int velocity)
 			if (!activeMessagesForNote[note].empty() && !channelNeedsUpdateMessage[channel]) // this note is still active for another channel
 			{
 				// need to set LED back to its previous color
-				message = activeMessagesForNote[note].back();
+				message = activeMessagesForNote[note].front();
 			}
 		}
 		else // this note is not currently active on any channels
@@ -386,13 +400,13 @@ void handleDamperMessage(bool enable, int channel)
 {
 	if (enable)
 	{
-		if (damperActive)
+		if (damperActive[channel])
 		{
 			//std::cerr << "WARNING: Received damper ON request, but damper is already active. Ignoring request." << std::endl;
 			return;
 		}
 
-		damperActive = true;
+		damperActive[channel] = true;
 
 		// need to save all currently active LEDs
 		for (int i = 0; i < numNotes; i++)
@@ -405,7 +419,7 @@ void handleDamperMessage(bool enable, int channel)
 				int messageChannel = ledMessage->getChannel();
 				if (messageChannel == channel)
 				{
-					activeMessagesForNote[i].push_back(ledMessage);
+					activeMessagesForNote[i].push_front(ledMessage);
 					damperMessages[channel].push_back(ledMessage);
 				}
 			}
@@ -413,13 +427,13 @@ void handleDamperMessage(bool enable, int channel)
 	}
 	else
 	{
-		if (!damperActive)
+		if (!damperActive[channel])
 		{
 			//std::cerr << "WARNING: Received damper OFF request, but damper is not currently active. Ignoring request." << std::endl;
 			return;
 		}
 
-		damperActive = false;
+		damperActive[channel] = false;
 
 		// need to clear all saved LEDs from previous on message
 		for (unsigned int i = 0; i < damperMessages[channel].size(); i++)
@@ -435,13 +449,13 @@ void handleSostenutoMessage(bool enable, int channel)
 {
 	if (enable)
 	{
-		if (sostenutoActive)
+		if (sostenutoActive[channel])
 		{
 			//std::cerr << "WARNING: Received sostenuto ON request, but sostenuto is already active. Ignoring request." << std::endl;
 			return;
 		}
 
-		sostenutoActive = true;
+		sostenutoActive[channel] = true;
 
 		// need to save all currently active LEDs
 		for (int i = 0; i < numNotes; i++)
@@ -454,7 +468,7 @@ void handleSostenutoMessage(bool enable, int channel)
 				int messageChannel = ledMessage->getChannel();
 				if (messageChannel == channel)
 				{
-					activeMessagesForNote[i].push_back(ledMessage);
+					activeMessagesForNote[i].push_front(ledMessage);
 					sostenutoMessages[channel].push_back(ledMessage);
 				}
 			}
@@ -462,13 +476,13 @@ void handleSostenutoMessage(bool enable, int channel)
 	}
 	else
 	{
-		if (!sostenutoActive)
+		if (!sostenutoActive[channel])
 		{
 			//std::cerr << "WARNING: Received sostenuto OFF request, but sostenuto is not currently active. Ignoring request." << std::endl;
 			return;
 		}
 
-		sostenutoActive = false;
+		sostenutoActive[channel] = false;
 
 		// need to clear all saved LEDs from previous on message
 		for (unsigned int i = 0; i < sostenutoMessages[channel].size(); i++)
@@ -492,8 +506,11 @@ void dumpDataStructures()
 	}
 
 	std::cout << std::endl;
-
-	std::cout << "Sostenuto active: " << sostenutoActive << std::endl;
+	
+	for (int i = 0; i < numChannels; i++)
+	{
+		std::cout << "Sostenuto[" << i << "] active: " << sostenutoActive[i] << std::endl;
+	}
 
 	for (int channel = 0; channel < numChannels; channel++)
 	{
@@ -506,7 +523,10 @@ void dumpDataStructures()
 
 	std::cout << std::endl;
 
-	std::cout << "Damper active: " << damperActive << std::endl;
+	for (int i = 0; i < numChannels; i++)
+	{
+		std::cout << "Damper[" << i << "] active: " << damperActive[i] << std::endl;
+	}
 
 	for (int channel = 0; channel < numChannels; channel++)
 	{
@@ -702,17 +722,15 @@ void clearDataStructures()
 
 	for(int i = 0; i < numChannels; i++)
 	{
+		sostenutoActive[i] = false;
 		sostenutoMessages[i].clear();
 	}
 
-	sostenutoActive = false;
-
 	for(int i = 0; i < numChannels; i++)
 	{
+		damperActive[i] = false;
 		damperMessages[i].clear();
 	}
-
-	damperActive = false;
 }
 
 void clear_LEDs()
@@ -918,27 +936,28 @@ void loadChannelColorConfig()
 	{
 		while ( !channelMappingFile.eof() )
 		{
+			// Handle channel flags
+
 			bool chnlNeedsUpdateMessage = false;
+			bool chnlIsLowPriority = false;
 
-			if (channelMappingFile.peek() == '+')
-			{
-				chnlNeedsUpdateMessage = true;
-			}
+			std::string channelFlags;
+			channelMappingFile >> channelFlags;
 
-			// Static channel colors
+			if (channelFlags.find("+") != std::string::npos) chnlNeedsUpdateMessage = true;
+			if (channelFlags.find("-") != std::string::npos) chnlIsLowPriority = true;
+
+
+			// Read channel colors
 
 			channelMappingFile >> chnl;
 			channelMappingFile >> r;
 			channelMappingFile >> g;
 			channelMappingFile >> b;
 
-			bool chnlIsLowPriority = false;
-
-			if (chnl < 0)
-			{
-				chnl = 0 - chnl; // convert to positive equivalent
-				chnlIsLowPriority = true;
-			}
+			//std::cout << "chnlNeedsUpdateMessage: " << chnlNeedsUpdateMessage << std::endl;
+			//std::cout << "chnlIsLowPriority: " << chnlIsLowPriority << std::endl;
+			//std::cout << chnl << " " << r << " " << g << " " << b << "" << std::endl << std::endl;
 
 			if (chnl < 1 || chnl > 16)
 			{
@@ -1078,6 +1097,16 @@ void init()
 		std::cout << "noteboard[" << i << "]: " << noteboard[i] << std::endl;
 	}
 	*/
+
+	
+	damperActive = new bool[numChannels];
+	sostenutoActive = new bool[numChannels];
+
+	for (int i = 0; i < numChannels; i++)
+	{
+		damperActive[i] = false;
+		sostenutoActive[i] = false;
+	}
 	
 	
 	loadChannelColorConfig();
