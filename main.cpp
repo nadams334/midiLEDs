@@ -165,6 +165,7 @@ int* red;
 int* green;
 int* blue;
 
+bool* channelIsLowPriority;
 bool* channelNeedsUpdateMessage;
 int cc_update_channel = 30;
 int cc_update_all = 31;
@@ -177,7 +178,7 @@ int cc_sostenuto = 66;
 std::deque<LED_MESSAGE*> activeMessagesForNote[numNotes];
 std::vector<LED_MESSAGE*> sostenutoMessages[numChannels];
 std::vector<LED_MESSAGE*> damperMessages[numChannels];
-std::vector<LED_MESSAGE*> pending_LED_messages[numChannels];
+//std::vector<LED_MESSAGE*> pending_LED_messages[numChannels];
 
 std::vector<Command*> commands;
 
@@ -881,6 +882,7 @@ void loadChannelColorConfig()
 		blue = new int[numChannels];
 	}
 
+	channelIsLowPriority = new bool[numChannels];
 	channelNeedsUpdateMessage = new bool[numChannels];
 	
 	int chnl = 0;
@@ -916,6 +918,13 @@ void loadChannelColorConfig()
 	{
 		while ( !channelMappingFile.eof() )
 		{
+			bool chnlNeedsUpdateMessage = false;
+
+			if (channelMappingFile.peek() == '+')
+			{
+				chnlNeedsUpdateMessage = true;
+			}
+
 			// Static channel colors
 
 			channelMappingFile >> chnl;
@@ -923,12 +932,12 @@ void loadChannelColorConfig()
 			channelMappingFile >> g;
 			channelMappingFile >> b;
 
-			bool chnlNeedsUpdateMessage = false;
+			bool chnlIsLowPriority = false;
 
 			if (chnl < 0)
 			{
 				chnl = 0 - chnl; // convert to positive equivalent
-				chnlNeedsUpdateMessage = true;
+				chnlIsLowPriority = true;
 			}
 
 			if (chnl < 1 || chnl > 16)
@@ -962,8 +971,8 @@ void loadChannelColorConfig()
 				blue[chnl-1] = blueConfig[chnl-1];
 			}
 			
-			if (chnlNeedsUpdateMessage)
-				channelNeedsUpdateMessage[chnl-1] = true;
+			channelIsLowPriority[chnl-1] = chnlIsLowPriority;
+			channelNeedsUpdateMessage[chnl-1] = chnlNeedsUpdateMessage;
 		}
 		channelMappingFile.close();
 
