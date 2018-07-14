@@ -680,6 +680,8 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		{
 			if (ccCode == cc_red)
 			{
+				mostRecentColorMessageChannel = channel;
+
 				red[channel] = value;
 
 				if (redConfig[channel] < 0)
@@ -690,6 +692,8 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 
 			else if (ccCode == cc_green)
 			{
+				mostRecentColorMessageChannel = channel;
+
 				green[channel] = value;
 
 				if (greenConfig[channel] < 0)
@@ -700,6 +704,8 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 
 			else if (ccCode == cc_blue)
 			{
+				mostRecentColorMessageChannel = channel;
+
 				blue[channel] = value;
 
 				if (blueConfig[channel] < 0)
@@ -707,8 +713,6 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 					blue[channel] = 0 - std::abs(blue[channel]); // force negative
 				}
 			}
-
-			mostRecentColorMessageChannel = channel;
 		}
 	}
 }
