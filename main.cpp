@@ -143,7 +143,6 @@ const int dimnessFactor = 8; // divide MIDI velocity by this amount when calcula
 const int numChannels = 16;
 const int numNotes = 128;
 
-bool CH345ErrorCorrector = true;
 bool dataDump = false;
 
 bool dynamic_colors = true;
@@ -565,86 +564,6 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
 	{
 		int channel = code - noteOnCodeMin;
-
-		// Error correcting
-		if (CH345ErrorCorrector)
-		{
-			if (!channelNeedsUpdateMessage[channel] 
-				&& message->at(1) == cc_sostenuto
-				&& message->at(2) == MAX_VELOCITY)
-			{
-				// Most likely this is a glitch with the CH345 USB/MIDI adapter
-				// This should be treated as a sostuento instead of an F#4
-				// Unfortunately this will hinder the ability to correctly interperet an actual F#4
-			
-				// Actually we will ignore this message because of the possibility of accidentally triggering a sostuento while mashing the F#4 key
-				//handleSostenutoMessage(message->at(2) > 0, channel);
-
-				return;
-			}
-			else if (!channelNeedsUpdateMessage[channel] 
-				&& message->at(1) == cc_damper
-				&& message->at(2) == MAX_VELOCITY)
-			{
-				// Most likely this is a glitch with the CH345 USB/MIDI adapter
-				// This should be treated as a damper instead of an E4
-				// Unfortunately this will hinder the ability to correctly interperet an actual E4
-			
-				// Actually we will ignore this message because of the possibility of accidentally triggering a damper while mashing the E4 key
-				//handleDamperMessage(message->at(2) > 0, channel);
-
-				return;
-			}
-			else if (message->at(1) == cc_red)
-			{
-				if (dynamic_colors)
-				{
-					mostRecentColorMessageChannel = channel;
-
-					red[channel] = message->at(2);
-
-					if (redConfig[channel] < 0)
-					{
-						red[channel] = 0 - std::abs(red[channel]); // force negative
-					}
-				}
-
-				return;
-			}
-			else if (message->at(1) == cc_green)
-			{
-				if (dynamic_colors)
-				{
-					mostRecentColorMessageChannel = channel;
-
-					green[channel] = message->at(2);
-
-					if (greenConfig[channel] < 0)
-					{
-						green[channel] = 0 - std::abs(green[channel]); // force negative
-					}
-				}
-
-				return;
-			}
-			else if (message->at(1) == cc_blue)
-			{
-				if (dynamic_colors)
-				{
-					mostRecentColorMessageChannel = channel;
-
-					blue[channel] = message->at(2);
-
-					if (blueConfig[channel] < 0)
-					{
-						blue[channel] = 0 - std::abs(blue[channel]); // force negative
-					}
-				}
-
-				return;
-			}
-		}
-
 		setNote(channel, message->at(1), message->at(2));
 	}	
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
@@ -748,7 +667,7 @@ void clear_LEDs()
 
 	write_LED_data();
 
-	std::cout << "LEDs cleared." << std::endl;
+	std::cout << "Data cleared." << std::endl;
 }
 
 void resetColors()
@@ -837,22 +756,6 @@ void displayCustomColorValues()
 		std::cout << "Last color message received was on channel " << mostRecentColorMessageChannel+1 << "." << std::endl;
 		return displayColorValues(mostRecentColorMessageChannel);
 	}
-}
-
-void toggleCH345ErrorCorrector()
-{
-	if (CH345ErrorCorrector)
-	{
-		CH345ErrorCorrector = false;
-		std::cout << "CH345 Error Corrector disabled." << std::endl;
-		std::cout << "Note messages which correspond to recognized control change messages are " << std::endl << "no longer interpeted as control change messages." << std::endl;
-	}
-	else
-	{
-		CH345ErrorCorrector = true;
-		std::cout << "CH345 Error Corrector enabled." << std::endl;
-		std::cout << "Note messages which correspond to recognized control change messages are " << std::endl << "now interpeted as control change messages." << std::endl;
-	}	
 }
 
 void end(int status)
@@ -1024,7 +927,6 @@ void createCommandList()
 	commands.push_back(new Command("Clear LEDs", &clear_LEDs));
 	commands.push_back(new Command("Dump Data Structures", &dumpDataStructures));
 	commands.push_back(new Command("Toggle MIDI data dump", &toggleDataDump));
-	commands.push_back(new Command("Toggle CH345 USB/MIDI Adapter Error Corrector", &toggleCH345ErrorCorrector));
 	commands.push_back(new Command("Toggle Custom Color Messages", &toggleDynamicColors));
 	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
 	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
