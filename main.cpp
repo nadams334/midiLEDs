@@ -362,7 +362,7 @@ void setNote(int channel, int note, int velocity)
 				}
 			}
 			
-			if (!activeMessagesForNote[note].empty() && !channelNeedsUpdateMessage[channel]) // this note is still active for another channel
+			if (!activeMessagesForNote[note].empty()) // this note is still active for another channel
 			{
 				// need to set LED back to its previous color
 				message = activeMessagesForNote[note].front();
