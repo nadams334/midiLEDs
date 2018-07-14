@@ -670,20 +670,6 @@ void clear_LEDs()
 	std::cout << "Data cleared." << std::endl;
 }
 
-void resetColors()
-{
-	for (int channel = 0; channel < numChannels; channel++)
-	{
-		red[channel] = redConfig[channel];
-		green[channel] = greenConfig[channel];
-		blue[channel] = blueConfig[channel];
-	}
-
-	mostRecentColorMessageChannel = -1;
-
-	std::cout << "All channels reset to default color configuration." << std::endl;
-}
-
 void displayColorMessageCodes()
 {
 	std::cout << "Send MIDI Control Change #" << cc_red << " to adjust the channel's red value." << std::endl;
@@ -796,16 +782,15 @@ bool colorsLoaded = false;
 
 void loadChannelColorConfig()
 {
+	mostRecentColorMessageChannel = -1;
+
 	redConfig = new int[numChannels];
 	greenConfig = new int[numChannels];
 	blueConfig = new int[numChannels];
 
-	if (!colorsLoaded)
-	{
-		red = new int[numChannels];
-		green = new int[numChannels];
-		blue = new int[numChannels];
-	}
+	red = new int[numChannels];
+	green = new int[numChannels];
+	blue = new int[numChannels];
 
 	channelIsLowPriority = new bool[numChannels];
 	channelNeedsUpdateMessage = new bool[numChannels];
@@ -821,19 +806,12 @@ void loadChannelColorConfig()
 		greenConfig[i] = 32;
 		blueConfig[i] = 32;
 
-		if (!colorsLoaded)
-		{
-			red[i] = redConfig[i];
-			green[i] = greenConfig[i];
-			blue[i] = blueConfig[i];
-		}
+		red[i] = redConfig[i];
+		green[i] = greenConfig[i];
+		blue[i] = blueConfig[i];
 
+		channelIsLowPriority[i] = false;
 		channelNeedsUpdateMessage[i] = false;
-	}
-
-	if (colorsLoaded && !dynamic_colors)
-	{
-		resetColors();
 	}
 
 	std::ifstream channelMappingFile;
@@ -890,12 +868,9 @@ void loadChannelColorConfig()
 			greenConfig[chnl-1] = g;
 			blueConfig[chnl-1] = b;
 
-			if (!colorsLoaded || !dynamic_colors)
-			{
-				red[chnl-1] = redConfig[chnl-1];
-				green[chnl-1] = greenConfig[chnl-1];
-				blue[chnl-1] = blueConfig[chnl-1];
-			}
+			red[chnl-1] = redConfig[chnl-1];
+			green[chnl-1] = greenConfig[chnl-1];
+			blue[chnl-1] = blueConfig[chnl-1];
 			
 			channelIsLowPriority[chnl-1] = chnlIsLowPriority;
 			channelNeedsUpdateMessage[chnl-1] = chnlNeedsUpdateMessage;
@@ -903,15 +878,18 @@ void loadChannelColorConfig()
 		channelMappingFile.close();
 
 		if (colorsLoaded)
-			std::cout << "Successfully loaded MIDI channel color mapping configuration file: " << channelMappingFilename << std::endl;
+		{
+			std::cout << "Successfully loaded MIDI channel mapping config file: " << channelMappingFilename << std::endl;
+			std::cout << "All channels reset to default color configuration." << std::endl;
+		}
+
+		colorsLoaded = true;
 	}
 	
 	else
 	{
-		std::cerr << "Could not open MIDI channel color mapping configuration file: " << channelMappingFilename << "\nUsing all white." << std::endl;
+		std::cerr << "Could not open MIDI channel mapping config file: " << channelMappingFilename << "\nUsing all white." << std::endl;
 	}
-
-	colorsLoaded = true;
 }
 
 void clearALSAConnections()
@@ -930,8 +908,7 @@ void createCommandList()
 	commands.push_back(new Command("Toggle Custom Color Messages", &toggleDynamicColors));
 	commands.push_back(new Command("Display Custom Color Values", &displayCustomColorValues));
 	commands.push_back(new Command("Display Custom Color MIDI Message Info", &displayColorMessageCodes));
-	commands.push_back(new Command("Reset Custom Colors", &resetColors));
-	commands.push_back(new Command("Reload MIDI Channel Color Config", &loadChannelColorConfig));
+	commands.push_back(new Command("Reload MIDI Channel Config and Reset Custom Colors", &loadChannelColorConfig));
 	commands.push_back(new Command("Clear ALSA Connections", &clearALSAConnections));
 }
 
