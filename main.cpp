@@ -302,6 +302,8 @@ void setNote(int channel, int note, int velocity)
 	int r = red[channel];
 	int g = green[channel];
 	int b = blue[channel];
+
+	if (r == 0 && g == 0 && b == 0) return; // ignore notes on this channel
 	
 	int brightness = ceiling(velocity, dimnessFactor);
 	
