@@ -182,7 +182,7 @@ std::vector<LED_MESSAGE*> damperMessages[numChannels];
 std::vector<Command*> commands;
 
 
-RtMidiIn* midiin;
+RtMidiIn* midiIn;
 const std::string DEFAULT_RTMIDI_NAME = "midiLEDs";
 
 bool autoConnectALSAPorts = true; // use aconnect to automatically establish ALSA connection on launch
@@ -751,7 +751,7 @@ void end(int status)
 	//clear_LEDs();
 	bcm2835_spi_end();
 	bcm2835_close();
-	delete midiin;
+	delete midiIn;
 	exit(status);
 }
 
@@ -1045,18 +1045,18 @@ void init()
 	
 	// Initalize RtMidi port for MIDI communcation
 	
-	midiin = new RtMidiIn();
+	midiIn = new RtMidiIn();
 	
 	// Create a port that other audio software can output MIDI data to
-	midiin->openVirtualPort(DEFAULT_RTMIDI_NAME);
+	midiIn->openVirtualPort(DEFAULT_RTMIDI_NAME);
 	
 	// Set our callback function.  This should be done immediately after
 	// opening the port to avoid having incoming messages written to the
 	// queue.
-	midiin->setCallback( &onMidiMessageReceived );
+	midiIn->setCallback( &onMidiMessageReceived );
 	
 	// ignore sysex, timing, or active sensing messages.
-	midiin->ignoreTypes( true, true, true );
+	midiIn->ignoreTypes( true, true, true );
 
 	lastMidiMessageReceived = new std::vector<unsigned char>();
 
