@@ -591,12 +591,10 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		{
 			update(channel);
 		}
-		
 		else if (ccCode == cc_update_all)
 		{
 			update(-1);
 		}
-
 		else if (dynamic_colors)
 		{
 			if (ccCode == cc_red)
@@ -610,7 +608,6 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 					red[channel] = 0 - std::abs(red[channel]); // force negative
 				}
 			}
-
 			else if (ccCode == cc_green)
 			{
 				mostRecentColorMessageChannel = channel;
@@ -622,7 +619,6 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 					green[channel] = 0 - std::abs(green[channel]); // force negative
 				}
 			}
-
 			else if (ccCode == cc_blue)
 			{
 				mostRecentColorMessageChannel = channel;
