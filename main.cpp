@@ -183,11 +183,11 @@ std::vector<Command*> commands;
 
 
 RtMidiIn* midiIn;
-const std::string DEFAULT_RTMIDI_NAME = "midiLEDs";
+const std::string DEFAULT_RTMIDI_NAME = "midiLEDs-input";
 
 bool autoConnectALSAPorts = true; // use aconnect to automatically establish ALSA connection on launch
 const std::string DEFAULT_ALSA_INPUT_NAME = "CH345";
-const std::string DEFAULT_ALSA_OUTPUT_NAME = "RtMidi Input Client:" + DEFAULT_RTMIDI_NAME;
+const std::string DEFAULT_ALSA_OUTPUT_NAME = DEFAULT_RTMIDI_NAME;
 
 
 
@@ -1041,10 +1041,10 @@ void init()
 	
 	// Initalize RtMidi port for MIDI communcation
 	
-	midiIn = new RtMidiIn();
+	midiIn = new RtMidiIn(RtMidi::Api::UNSPECIFIED, DEFAULT_RTMIDI_NAME, 100);
 	
 	// Create a port that other audio software can output MIDI data to
-	midiIn->openVirtualPort(DEFAULT_RTMIDI_NAME);
+	midiIn->openVirtualPort();
 	
 	// Set our callback function.  This should be done immediately after
 	// opening the port to avoid having incoming messages written to the
