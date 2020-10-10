@@ -561,18 +561,25 @@ void onMidiMessageReceived(double deltatime, std::vector<unsigned char>* message
 		dumpMidiMessage(message);
 	}
 
+	// Determine if the message's Status Byte indicates a Note Message or a Control Change Message
+
 	int code = (int) message->at(0);
 
+	// Note On message
 	if (code >= noteOnCodeMin && code <= noteOnCodeMax)
 	{
+		if (dynamic_colors && (message->at(1) == cc_red || message->at(1) == cc_green || message->at(1) == cc_blue))
+			return; // Ignore Note On messages that look like Color Change messages
 		int channel = code - noteOnCodeMin;
 		setNote(channel, message->at(1), message->at(2));
-	}	
+	}
+	// Note Off message
 	else if (code >= noteOffCodeMin && code <= noteOffCodeMax)
 	{
 		int channel = code - noteOffCodeMin;
 		setNote(channel, message->at(1), 0);
 	}
+	// Control Change message
 	else if (code >= ccStatusCodeMin && code <= ccStatusCodeMax)
 	{
 		int ccCode = (int) message->at(1);
